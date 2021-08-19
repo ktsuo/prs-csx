@@ -5,10 +5,18 @@ import pandas as pd
 
 def format_input(filepath, SNP, A1, A2, BETA, P):
     if hl.hadoop_exists(filepath):
+        
+        basename = os.path.basename(filepath)
+        root, extension = os.path.splitext(basename)
+        
         cols = [SNP, A1, A2, BETA, P]
         summstats = pd.read_table(filepath, header=0, sep='\t', compression='gzip', usecols=cols)
         summstats = summstats.rename(columns={SNP:'SNP', A1:'A1', A2:'A2', BETA:'BETA', P:'P'})
-        return summstats # how to make formatted summstats temporary j.ofile? 
+                
+        outfile_name = f'{root}_formatted.txt'
+        summstats.to_csv(outfile_name, sep='\t')
+
+        return outfile_name
     else:
         print('summstats file not found!')
 
@@ -27,14 +35,14 @@ def main(args):
             pop_list.append(pop)
             n_list.append(n)
 
-    b = hb.Batch(backend=backend, name='format-files-for-prscsx')
+    b = hb.Batch(backend=backend, name='prscsx')
     #jobs = []
     format_sst_output = [] 
     for sst in sst_list:
         j = b.new_python_job(name=f'formatting-{sst}')
-        j.call(format_input, sst, args.SNP_col, args.A1_col, args.A2_col, args.A1_BETA_col, args.P_col) 
+        res = j.call(format_input, sst, args.SNP_col, args.A1_col, args.A2_col, args.A1_BETA_col, args.P_col) 
         #jobs.append(j)
-        format_sst_output.append(j.ofile)
+        format_sst_output.append(res)
 
 
     sink = b.new_job(name=f'run-prscsx')
