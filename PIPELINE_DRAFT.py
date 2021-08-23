@@ -29,7 +29,7 @@ def main(args):
     with open(args.input_file, 'rt') as f:
         rows = f.readlines()
     
-        for row in rows:
+        for row in rows:   ### pheno col?
             sst_path, pop, n = row.split('\t')
             sst_list.append(sst_path)
             pop_list.append(pop)
@@ -44,9 +44,46 @@ def main(args):
         #jobs.append(j)
         format_sst_output.append(res)
 
-
-    sink = b.new_job(name=f'run-prscsx')
-    sink.call(run_prscsx) # run prscsx function here?
+ 
+## RUN PRS-Csx
+def run_prs(batch: hb.batch.Batch, 
+            image: str,
+            ref_dir: str, 
+            bim: hb.resource.ResourceFile, 
+            summary_stats: List,
+            N: int,
+            chr:int,
+            pops: List,
+            out_name: str,
+            out_dir: str)-> hb.job.Job:
+    
+    
+   
+    prs.image(image)
+    prs.cpu(4)
+            
+    prs.command = f '" python3 {ref_dir}PRS-CSx.py \
+        --ref_dir={ref_dir} \ #from input
+        --bim_prefix={bim} \ #finput
+        --sst_file={sst_list} \ #from above
+        --n_gwas={n_list} \ #from above
+        --pop={pop_list} \ #from above
+        --out_dir={out_dir} \ #input
+        --out_name={pheno} \ #from above
+        --chrom={chrom} \ 
+        --meta=TRUE \
+        " '
+     
+    for chr in range (1,22):
+    chrom = f'chrom{chr}
+    
+    prs = batch.new_job(name = f'{pheno}-{chrom}-PRS-Csx'). ### declare pheno var
+    prs = run_prs()...
+            
+    
+    
+    
+    return prs
 
 
     
@@ -59,6 +96,10 @@ if __name__ == '__main__':
     parser.add_argument('--A2_col', required=True)
     parser.add_argument('--A1_BETA_col', required=True)
     parser.add_argument('--P_col', required=True)
+    parser.add_argument('--chr', default='1-22')
+    parser.add_argument('--ref_dir, required=True)
+    parser.add_argument('--bim, required = True)
+    parser.add_argument('--out_dir, required = True)                   
     args = parser.parse_args()
 
     main(args)
