@@ -73,12 +73,13 @@ def run_prs(batch: hb.batch.Batch,
         --chrom={chrom} \ 
         --meta=TRUE \
         " '
-     
-    for chr in range (1,22):
-    chrom = f'chrom{chr}
     
-    prs = batch.new_job(name = f'{pheno}-{chrom}-PRS-Csx'). ### declare pheno var
-    prs = run_prs()...
+    prs.depends_on(*jobs)
+     
+    for chr in range (1,22):chrom = f'chrom{chr}
+    
+    prs = batch.new_job(name = f'{pheno}-{chrom}-PRS-Csx')
+    prs = run_prs(ref_dir, bim, out_dir)
             
     
     
@@ -97,9 +98,9 @@ if __name__ == '__main__':
     parser.add_argument('--A1_BETA_col', required=True)
     parser.add_argument('--P_col', required=True)
     parser.add_argument('--chr', default='1-22')
-    parser.add_argument('--ref_dir, required=True)
-    parser.add_argument('--bim, required = True)
-    parser.add_argument('--out_dir, required = True)                   
+    parser.add_argument('--ref_dir', required=True)
+    parser.add_argument('--bim', required = True)
+    parser.add_argument('--out_dir', required = True)                   
     args = parser.parse_args()
 
     main(args)
