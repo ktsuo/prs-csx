@@ -98,7 +98,7 @@ def main(args):
 
     for chr in chrom_list:
         
-        j = run_prscsx(b, image, open_refdir, input_bfile, sst_list, N_list, pop_list, chr, out_name, out_dir, args.meta)
+        j = run_prscsx(b, image, refdir, input_bfile, sst_list, N_list, pop_list, chr, out_name, out_dir, args.meta)
 
     b.run()
     
