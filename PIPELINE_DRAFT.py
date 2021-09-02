@@ -54,7 +54,7 @@ def run_prscsx(b: hb.batch.Batch,
     return j
 
 def main(args):
-    backend = hb.ServiceBackend(billing_project='diverse-pop-seq-ref', bucket='gs://ukb-diverse-pops/prs-csx')
+    backend = hb.ServiceBackend(billing_project='ukb_diverse_pops', bucket='gs://ukb-diverse-pops/prs-csx')
 
     sst_list = []
     pop_list = []
