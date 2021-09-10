@@ -1,11 +1,11 @@
 import hail as hl
 import argparse,os.path
 import hailtop.batch as hb
+import pandas as pd
 
 def format_input(filepath, SNP, A1, A2, BETA, P):
     if hl.hadoop_exists(filepath):
 
-        #dir = os.path.dirname(filepath)
         basename = os.path.basename(filepath)
         root, extension = os.path.splitext(basename)
 
@@ -69,13 +69,17 @@ def main(args):
             n_list.append(n)
 
     b = hb.Batch(backend=backend, name='prscsx')
+    image='gcr.io/ukbb-diversepops-neale/ktsuo-prscsx'
     #jobs = []
-    format_sst_output = [] 
+    format_sst_output = []
     for sst in sst_list:
         j = b.new_python_job(name=f'formatting-{sst}')
-        res = j.call(format_input, sst, args.SNP_col, args.A1_col, args.A2_col, args.A1_BETA_col, args.P_col) 
+        input = b.read_input(sst)
+        j.image(image)
+        res = j.call(format_input, {input}, args.SNP_col, args.A1_col, args.A2_col, args.A1_BETA_col, args.P_col) 
         #jobs.append(j)
-        format_sst_output.append(res)
+        format_sst_output.append(res.as_str())
+
 
     # format summstats string names for input 
     sst_list = ','.join(format_sst_output)
@@ -87,14 +91,17 @@ def main(args):
     N_list = ",".join(map(str, n_list))
 
     # get ref panels and untar
-    ref_dir = b.read_input_group(**{'tar.gz': args.ref_path})
-    get_refpanels = b.new_job(name='get-ref-panels')
-    get_refpanels.command(f'''
-    mkdir ref_panels
-    tar -zwvf {ref_dir} --directory ref_panels''')
-    get_refpanels.run()
+    refpanels = {}
+    anc_list = ['afr', 'amr', 'eas', 'eur', 'sas']
+    for anc in anc_list:
+        file = os.path.join(args.ref_path,f'ldblk_ukbb_{anc}.tar.gz')
+        refpanels[anc] = b.read_input(file)
 
-    image='gcr.io/ukbb-diversepops-neale/ktsuo-prscsx'
+    get_refpanels = b.new_job(name='get-ref-panels')
+    get_refpanels.command('mkdir ref_panels')
+
+    for ancestry, input_file in refpanels.items():
+        get_refpanels.command(f'tar -zwvf {input_file} --directory ref_panels')
 
     chrom_list=list(map(str,range(1,22)))
 
