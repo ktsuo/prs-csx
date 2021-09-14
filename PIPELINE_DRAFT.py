@@ -7,7 +7,7 @@ from typing import List
 
 
 def format_input(filepath, SNP, A1, A2, BETA, P, outdir):
-    print(f'formating {filepath}')
+    print(f'formatting {filepath}')
     basename = os.path.basename(filepath)
     root, extension = os.path.splitext(basename)
 
@@ -34,7 +34,7 @@ def run_prscsx(b: hb.batch.Batch,
     j.cpu(4)
 
     # get bfile
-    input_bfile = b.read_input(bim_file)
+    #input_bfile = b.read_input(bim_file)
     bim_basename = os.path.basename(bim_file)
     bim_root, _ = os.path.splitext(bim_basename)
 
@@ -83,12 +83,16 @@ def main(args):
     print(pop_list)
     print(n_list)
 
-    b = hb.Batch(backend=backend, name='prscsx')
-    image = 'gcr.io/ukbb-diversepops-neale/ktsuo-prscsx'
+    format_b = hb.Batch(backend=backend, name='prscsx-formatting')
+    format_image = hb.docker('gcr.io/hail-vdc/prs-csx-python', requirements=['pandas']) 
 
     for sst in sst_list:
-        format_input(filepath=sst, SNP=args.SNP_col, A1=args.A1_col, A2=args.A2_col, BETA=args.A1_BETA_col,
+        j = format_b.new_python_job(name=f'formatting-{sst}')
+        j.image(format_image)
+        j.call(format_input, filepath=sst, SNP=args.SNP_col, A1=args.A1_col, A2=args.A2_col, BETA=args.A1_BETA_col,
                      P=args.P_col, outdir=args.out_dir)
+    format_b.run()
+
 
     # format summstats string names for input
     sst_file_paths = hl.utils.hadoop_ls(f'{args.out_dir}/formated_sst_files')
@@ -97,6 +101,9 @@ def main(args):
         sst_list.append(i['path'])
 
     # get ref panels and untar
+    b = hb.Batch(backend=backend, name='prscsx')
+    image = 'gcr.io/ukbb-diversepops-neale/ktsuo-prscsx'
+
     refpanels = {}
     anc_list = ['afr', 'amr', 'eas', 'eur', 'sas']
     for anc in anc_list:
