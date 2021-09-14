@@ -7,13 +7,14 @@ from typing import List
 
 
 def format_input(filepath, SNP, A1, A2, BETA, P, outdir):
+
     print(f'formatting {filepath}')
     basename = os.path.basename(filepath)
     root, extension = os.path.splitext(basename)
 
     cols = [SNP, A1, A2, BETA, P]
     summstats = pd.read_table(filepath, header=0, sep='\t', compression='gzip', usecols=cols)
-    summstats = summstats.rename(columns={SNP: 'SNP', A1: 'A1', A2: 'A2', BETA: 'BETA', P: 'P'})
+    summstats.rename(columns={SNP: 'SNP', A1: 'A1', A2: 'A2', BETA: 'BETA', P: 'P'}, inplace=True)
 
     outfile_name = f'{root}_formatted.txt'
     summstats.to_csv(f'{outdir}/formated_sst_files/{outfile_name}', sep='\t', index=False)
@@ -65,7 +66,7 @@ def run_prscsx(b: hb.batch.Batch,
 
 
 def main(args):
-    backend = hb.ServiceBackend(billing_project='ukb_diverse_pops', bucket='gs://ukb-diverse-pops/prs-csx')
+    backend = hb.ServiceBackend(billing_project='ukb_diverse_pops', remote_tmpdir='gs://ukb-diverse-pops/prs-csx')
 
     sst_list = []
     pop_list = []
@@ -83,12 +84,12 @@ def main(args):
     print(pop_list)
     print(n_list)
 
-    format_b = hb.Batch(backend=backend, name='prscsx-formatting')
-    format_image = hb.docker('gcr.io/hail-vdc/prs-csx-python', requirements=['pandas']) 
+    format_image = hb.docker.build_python_image('gcr.io/ukbb-diversepops-neale/prs-csx-python', requirements=['pandas']) 
+    format_b = hb.Batch(backend=backend, name='prscsx-formatting', default_python_image=format_image)
 
     for sst in sst_list:
         j = format_b.new_python_job(name=f'formatting-{sst}')
-        j.image(format_image)
+        #j.image(format_image)
         j.call(format_input, filepath=sst, SNP=args.SNP_col, A1=args.A1_col, A2=args.A2_col, BETA=args.A1_BETA_col,
                      P=args.P_col, outdir=args.out_dir)
     format_b.run()
@@ -139,4 +140,4 @@ if __name__ == '__main__':
 
     main(arguments)
 
-    # python PIPELINE_DRAFT.py --input_file tmp_prscsx_inputfile_trialAFR.txt --SNP_col rsid --A1_col ALT --A2_col REF --A1_BETA_col inv_var_meta_beta --P_col inv_var_meta_p --bfile_path 'gs://ukb-diverse-pops/ktsuo_unrelateds_tmp/AFR/' --ref_path 'gs://ukb-diverse-pops/prs-csx/'
+    # python prs-csx/PIPELINE_DRAFT.py --input_file tmp_prscsx_inputfile_trialAFR.txt --SNP_col rsid --A1_col ALT --A2_col REF --A1_BETA_col inv_var_meta_beta --P_col inv_var_meta_p --bfile_path 'gs://ukb-diverse-pops/ktsuo_unrelateds_tmp/AFR' --ref_path 'gs://ukb-diverse-pops/prs-csx' --out_dir 'gs://ukb-diverse-pops/prs-csx'
