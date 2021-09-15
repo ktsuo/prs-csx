@@ -6,6 +6,20 @@ import os
 from typing import List
 
 
+def bytes_to_gb(in_file: str):
+    """
+    Convert the size from bytes to GiB
+    :param in_file: path to file, str
+    :return: file size in GiB
+    """
+
+    file_info = hl.utils.hadoop_stat(in_file)
+    size_bytes = file_info['size_bytes']
+    size_gigs = size_bytes / (1024 * 1024 * 1024)
+
+    return size_gigs
+
+
 def format_input(filepath, SNP, A1, A2, BETA, P, outdir):
 
     print(f'formatting {filepath}')
@@ -14,10 +28,12 @@ def format_input(filepath, SNP, A1, A2, BETA, P, outdir):
 
     cols = [SNP, A1, A2, BETA, P]
     summstats = pd.read_table(filepath, header=0, sep='\t', compression='gzip', usecols=cols)
-    summstats.rename(columns={SNP: 'SNP', A1: 'A1', A2: 'A2', BETA: 'BETA', P: 'P'}, inplace=True)
+    summstats = summstats.rename(columns={SNP: 'SNP', A1: 'A1', A2: 'A2', BETA: 'BETA', P: 'P'}, inplace=False)
+    new_order = ['SNP', 'A1', 'A2', 'BETA', 'P']
+    df = summstats[new_order]
 
     outfile_name = f'{root}_formatted.txt'
-    summstats.to_csv(f'{outdir}/formated_sst_files/{outfile_name}', sep='\t', index=False)
+    df.to_csv(f'{outdir}/formated_sst_files/{outfile_name}', sep='\t', index=False)
 
 
 def run_prscsx(b: hb.batch.Batch,
@@ -66,7 +82,8 @@ def run_prscsx(b: hb.batch.Batch,
 
 
 def main(args):
-    backend = hb.ServiceBackend(billing_project='ukb_diverse_pops', remote_tmpdir='gs://ukb-diverse-pops/prs-csx')
+    backend = hb.ServiceBackend(billing_project='diverse-pop-seq-ref',
+                                bucket='ukb-diverse-pops')
 
     sst_list = []
     pop_list = []
@@ -84,16 +101,21 @@ def main(args):
     print(pop_list)
     print(n_list)
 
-    format_image = hb.docker.build_python_image('gcr.io/ukbb-diversepops-neale/prs-csx-python', requirements=['pandas']) 
-    format_b = hb.Batch(backend=backend, name='prscsx-formatting', default_python_image=format_image)
+    #format_image = hb.docker.build_python_image('gcr.io/ukbb-diversepops-neale/prs-csx-python',
+    #                                            requirements=['pandas', 'fsspec', 'gcsfs'])
+    format_b = hb.Batch(backend=backend, name='prscsx-formatting',
+                        default_python_image='gcr.io/ukbb-diversepops-neale/prs-csx-python')
 
     for sst in sst_list:
         j = format_b.new_python_job(name=f'formatting-{sst}')
-        #j.image(format_image)
+        sst_size = bytes_to_gb(sst)
+        disk_size = round(4.0 + 2.0 * sst_size)
+        j.storage(disk_size)
+        j.cpu(4)
         j.call(format_input, filepath=sst, SNP=args.SNP_col, A1=args.A1_col, A2=args.A2_col, BETA=args.A1_BETA_col,
                      P=args.P_col, outdir=args.out_dir)
-    format_b.run()
 
+    format_b.run()
 
     # format summstats string names for input
     sst_file_paths = hl.utils.hadoop_ls(f'{args.out_dir}/formated_sst_files')
