@@ -43,15 +43,17 @@ def run_prscsx(b: hb.batch.Batch,
                N: List,
                pops: List,
                chr: int,
+               depends_on_j,
                meta):
 
     j = b.new_job(name=f'run-prscsx-{chr}')
+    j.depends_on(depends_on_j)
 
     j.image(image)
     j.cpu(4)
 
     # get bfile
-    #input_bfile = b.read_input(bim_file)
+    input_bfile = b.read_input(bim_file)
     bim_basename = os.path.basename(bim_file)
     bim_root, _ = os.path.splitext(bim_basename)
 
@@ -67,9 +69,13 @@ def run_prscsx(b: hb.batch.Batch,
     # format sample sizes for input
     n_list = ','.join(map(str, N))
 
+    j.command(f'''echo {sst_files} \
+echo {n_list} \
+echo {pop_list}''')
+
     j.command(f'''
     mkdir tmp_prscsx_output
-    python3.8 PRS-CSx.py \
+    python3 PRScsx.py \
         --ref_dir=ref_panels \
         --bim_prefix={bim_root} \
         --sst_file={sst_files} \
@@ -129,11 +135,17 @@ def main(args):
 
     refpanels = {}
     anc_list = ['afr', 'amr', 'eas', 'eur', 'sas']
+    ref_file_sizes = 0
     for anc in anc_list:
         file = os.path.join(args.ref_path, f'ldblk_ukbb_{anc}.tar.gz')
         refpanels[anc] = b.read_input(file)
+        ref_size = bytes_to_gb(file)
+        ref_file_sizes += round(10.0 + 2.0 * ref_size)
 
     get_refpanels = b.new_job(name='get-ref-panels')
+    get_refpanels.storage(f'{ref_file_sizes}Gi')
+    get_refpanels.memory('highmem')
+    get_refpanels.cpu(8)
     get_refpanels.command('mkdir ref_panels')
 
     for ancestry, input_file in refpanels.items():
@@ -141,7 +153,7 @@ def main(args):
 
     for chrom in range(1, 23):
         run_prscsx(b, image, bim_file=args.bfile_path, summary_stats=sst_list, N=n_list, pops=pop_list, chr=chrom,
-                   meta=args.meta)
+                   meta=args.meta, depends_on_j=get_refpanels)
 
     b.run()
 
