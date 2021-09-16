@@ -149,7 +149,7 @@ def main(args):
     get_refpanels.command('mkdir ref_panels')
 
     for ancestry, input_file in refpanels.items():
-        get_refpanels.command(f'tar -zwvf {input_file} --directory ref_panels')
+        get_refpanels.command(f'tar -xwvf {input_file} --directory ref_panels')
 
     for chrom in range(1, 23):
         run_prscsx(b, image, bim_file=args.bfile_path, summary_stats=sst_list, N=n_list, pops=pop_list, chr=chrom,
