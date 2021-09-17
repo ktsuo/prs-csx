@@ -36,30 +36,34 @@ def format_input(filepath, SNP, A1, A2, BETA, P, outdir):
     df.to_csv(f'{outdir}/formated_sst_files/{outfile_name}', sep='\t', index=False)
 
 
-def run_prscsx(b: hb.batch.Batch, refpanels,
+def run_prscsx(b: hb.batch.Batch,
+               refpanels: dict,
                image: str,
                bim_file: str,
                summary_stats: List,
                N: List,
                pops: List,
-               chr: int,
+               chrom: int,
+               refs_size: int,
+               snp_info_file: str,
                meta):
 
-    j = b.new_job(name=f'run-prscsx-{chr}')
-
-    j.image(image)
-    j.cpu(4)
+    j = b.new_job(name=f'run-prscsx-{chrom}')
 
     # get bfile
-    input_bfile = b.read_input(bim_file)
-    bim_basename = os.path.basename(bim_file)
-    bim_root, _ = os.path.splitext(bim_basename)
+    input_bfile = b.read_input_group(bim=bim_file)
+    snp_info = b.read_input(snp_info_file)
 
-    sst_files = ''
+    sst_files_list = []
+    sst_files_sizes = 0
 
     for file in summary_stats:
         input_sst = b.read_input(file)
-        sst_files += f'{input_sst},'
+        sst_files_list.append(input_sst)
+        sst_files_sizes += round(4.0 + 2.0 * bytes_to_gb(file))
+
+    # format sst for input
+    sst_files = ','.join(sst_files_list)
 
     # format populations for input
     pop_list = ','.join(pops)
@@ -67,27 +71,36 @@ def run_prscsx(b: hb.batch.Batch, refpanels,
     # format sample sizes for input
     n_list = ','.join(map(str, N))
 
-    j.command(f'''mkdir ref_panels''')
+    job_storage = refs_size + sst_files_sizes + 4
 
-    for ancestry,input_file in refpanels.items():
-        j.command(f'tar -xwvf {input_file} --directory ref_panels')
+    j.image(image)
+    j.cpu(4)
+    j.storage(f'{job_storage}Gi')
+
+    j.command('mkdir ref_panels')
+    j.command(f'cp {snp_info} ref_panels')
+    j.command('ls ref_panels')
+
+    for ancestry, input_file in refpanels.items():
+        j.command(f'tar xf {input_file} -C ref_panels')
+    j.command('ls ref_panels')
 
     j.command(f'''
     mkdir tmp_prscsx_output
     python3 PRScsx.py \
         --ref_dir=ref_panels \
-        --bim_prefix={bim_root} \
+        --bim_prefix={input_bfile} \
         --sst_file={sst_files} \
         --n_gwas={n_list} \
         --pop={pop_list} \
         --out_dir=tmp_prscsx_output \
         --out_name=tmp \
-        --chrom={chr} \
+        --chrom={chrom} \
         --meta={meta}''')
 
 
 def main(args):
-    backend = hb.ServiceBackend(billing_project='ukb_diverse_pops',
+    backend = hb.ServiceBackend(billing_project='diverse-pop-seq-ref',
                                 bucket='ukb-diverse-pops')
 
     sst_list = []
@@ -130,7 +143,7 @@ def main(args):
 
     # get ref panels and untar
     b = hb.Batch(backend=backend, name='prscsx')
-    image = 'gcr.io/ukbb-diversepops-neale/ktsuo-prscsx'
+    prs_img = 'gcr.io/ukbb-diversepops-neale/ktsuo-prscsx'
 
     refpanels_dict = {}
     anc_list = ['afr', 'amr', 'eas', 'eur', 'sas']
@@ -142,8 +155,9 @@ def main(args):
         ref_file_sizes += round(10.0 + 2.0 * ref_size)
 
     for chrom in range(1, 23):
-        run_prscsx(b, image, refpanels = refpanels_dict, bim_file=args.bfile_path, summary_stats=sst_list, N=n_list, pops=pop_list, chr=chrom,
-                   meta=args.meta)
+        run_prscsx(b=b, image=prs_img, refpanels=refpanels_dict, bim_file=args.bfile, summary_stats=sst_list,
+                   N=n_list, pops=pop_list, chrom=chrom, meta=args.meta, refs_size=ref_file_sizes,
+                   snp_info_file=args.snp_info)
 
     b.run()
 
@@ -156,8 +170,9 @@ if __name__ == '__main__':
     parser.add_argument('--A2_col', required=True)
     parser.add_argument('--A1_BETA_col', required=True)
     parser.add_argument('--P_col', required=True)
-    parser.add_argument('--bfile_path', required=True)
+    parser.add_argument('--bfile', required=True)
     parser.add_argument('--ref_path', required=True)
+    parser.add_argument('--snp_info', required=True)
     parser.add_argument('--out_dir', required=True)
     parser.add_argument('--meta', action="store_true")
     arguments = parser.parse_args()
