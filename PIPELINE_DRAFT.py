@@ -20,7 +20,8 @@ def bytes_to_gb(in_file: str):
     return size_gigs
 
 
-def format_input(filepath, SNP, A1, A2, BETA, P, outdir):
+def format_input(filepath: str = None, SNP: str = None, A1: str = None, A2: str = None, BETA: str = None, P: str = None,
+                 outdir: str = None):
 
     print(f'formatting {filepath}')
     basename = os.path.basename(filepath)
