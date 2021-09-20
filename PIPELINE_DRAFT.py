@@ -47,6 +47,7 @@ def run_prscsx(b: hb.batch.Batch,
                chrom: int,
                refs_size: int,
                snp_info_file: str,
+               out_dir: str,
                meta):
 
     j = b.new_job(name=f'run-prscsx-{chrom}')
@@ -61,7 +62,7 @@ def run_prscsx(b: hb.batch.Batch,
     for file in summary_stats:
         input_sst = b.read_input(file)
         sst_files_list.append(input_sst)
-        sst_files_sizes += round(4.0 + 2.0 * bytes_to_gb(file))
+        sst_files_sizes += round(10.0 + 2.0 * bytes_to_gb(file))
 
     # format sst for input
     sst_files = ','.join(sst_files_list)
@@ -72,22 +73,21 @@ def run_prscsx(b: hb.batch.Batch,
     # format sample sizes for input
     n_list = ','.join(map(str, N))
 
-    job_storage = refs_size + sst_files_sizes + 4
+    job_storage = refs_size + sst_files_sizes + 10
 
     j.image(image)
-    j.cpu(4)
+    j.cpu(8)
     j.storage(f'{job_storage}Gi')
 
     j.command('mkdir ref_panels')
+    j.command('mkdir tmp_prscsx_output')
     j.command(f'cp {snp_info} ref_panels')
-    j.command('ls ref_panels')
 
     for ancestry, input_file in refpanels.items():
         j.command(f'tar xf {input_file} -C ref_panels')
     j.command('ls ref_panels')
 
     j.command(f'''
-    mkdir tmp_prscsx_output
     python3 PRScsx.py \
         --ref_dir=ref_panels \
         --bim_prefix={input_bfile} \
@@ -98,6 +98,9 @@ def run_prscsx(b: hb.batch.Batch,
         --out_name=tmp \
         --chrom={chrom} \
         --meta={meta}''')
+
+    j.command(f'mv tmp_prscsx_output {j.scores}')
+    b.write_output(j.scores, f'{out_dir}/prs_csx_scores')
 
 
 def main(args):
@@ -158,7 +161,7 @@ def main(args):
     for chrom in range(1, 23):
         run_prscsx(b=b, image=prs_img, refpanels=refpanels_dict, bim_file=args.bfile, summary_stats=sst_list,
                    N=n_list, pops=pop_list, chrom=chrom, meta=args.meta, refs_size=ref_file_sizes,
-                   snp_info_file=args.snp_info)
+                   snp_info_file=args.snp_info, out_dir=args.out_dir)
 
     b.run()
 
