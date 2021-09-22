@@ -40,7 +40,8 @@ def format_input(filepath: str = None, SNP: str = None, A1: str = None, A2: str 
 def run_prscsx(b: hb.batch.Batch,
                refpanels: dict,
                image: str,
-               bim_file: str,
+               bfile: str,
+               target_pop: str,
                summary_stats: List,
                N: List,
                pops: List,
@@ -53,7 +54,8 @@ def run_prscsx(b: hb.batch.Batch,
     j = b.new_job(name=f'run-prscsx-{chrom}')
 
     # get bfile
-    input_bfile = b.read_input_group(bim=bim_file)
+    # input_bfile = b.read_input_group(bim=bim_file)
+    input_bim_file = b.read_input_group(bim=f'{bfile}/{target_pop}.bim')
     snp_info = b.read_input(snp_info_file)
 
     sst_files_list = []
@@ -90,7 +92,7 @@ def run_prscsx(b: hb.batch.Batch,
     j.command(f'''
     python3 PRScsx.py \
         --ref_dir=ref_panels \
-        --bim_prefix={input_bfile} \
+        --bim_prefix={input_bim_file} \
         --sst_file={sst_files} \
         --n_gwas={n_list} \
         --pop={pop_list} \
@@ -99,8 +101,39 @@ def run_prscsx(b: hb.batch.Batch,
         --chrom={chrom} \
         --meta={meta}''')
 
-    j.command(f'mv tmp_prscsx_output {j.scores}')
+    #j.command(f'mv tmp_prscsx_output {j.scores}')
+    j.command(f'cp -a tmp_prscsx_output/. {j.scores}')
     b.write_output(j.scores, f'{out_dir}/prs_csx_scores')
+
+def run_plink(b: hb.batch.Batch,
+            depends_on_j,
+            image: str,
+            source_pop: str,
+            bfile: str,
+            target_pop: str,
+            out_dir: str):
+
+    j = b.new_job(name=f'run-plink-{source_pop}')
+    j.depends_on(depends_on_j)
+    j.image(image)
+    
+    input_bfile = b.read_input_group(bed=f'{bfile}/{target_pop}.bed', 
+                                    bim=f'{bfile}/{target_pop}.bim',
+                                    fam=f'{bfile}/{target_pop}.fam')
+
+    j.command(f'cat tmp_prscsx_output/tmp_{source_pop}_pst_eff_a1_b0.5_phiauto_chr* > \
+        tmp_prscsx_output/tmp_{source_pop}_pst_eff_a1_b0.5_phiauto_ALLchr.txt') # need to make sure same batch as prs-csx
+    
+    j.declare_resource_group(ofile={'log':'{root}.log',
+    'nosex':'{root}.nosex',
+    'nopred':'{root}.nopred',
+    'profile':'{root}.profile'})
+    
+    j.command(f'plink1.9 \
+        --bfile {input_bfile} \
+        --score tmp_{source_pop}_pst_eff_a1_b0.5_phiauto_ALLchr.txt 2 4 6 sum center \
+        --out {j.ofile}')
+    b.write_output(j.ofile.profile, f'{out_dir}/{target_pop}_plink_scores')
 
 
 def main(args):
@@ -159,9 +192,13 @@ def main(args):
         ref_file_sizes += round(10.0 + 2.0 * ref_size)
 
     for chrom in range(1, 23):
-        run_prscsx(b=b, image=prs_img, refpanels=refpanels_dict, bim_file=args.bfile, summary_stats=sst_list,
+        run_prscsx(b=b, image=prs_img, refpanels=refpanels_dict, bfile=args.bfile_path, target_pop=args.target_pop, summary_stats=sst_list,
                    N=n_list, pops=pop_list, chrom=chrom, meta=args.meta, refs_size=ref_file_sizes,
                    snp_info_file=args.snp_info, out_dir=args.out_dir)
+
+    plink_img = 'hailgenetics/genetics:0.2.37'
+    for pop in pop_list:
+        run_plink(b=b, depends_on_j=run_prscsx, image=plink_img, target_pop=args.target_pop, bfile=args.bfile_path, source_pop=pop, out_dir=args.out_dir)
 
     b.run()
 
@@ -174,7 +211,8 @@ if __name__ == '__main__':
     parser.add_argument('--A2_col', required=True)
     parser.add_argument('--A1_BETA_col', required=True)
     parser.add_argument('--P_col', required=True)
-    parser.add_argument('--bfile', required=True)
+    parser.add_argument('--bfile_path', required=True)
+    parser.add_argument('--target_pop', required=True)
     parser.add_argument('--ref_path', required=True)
     parser.add_argument('--snp_info', required=True)
     parser.add_argument('--out_dir', required=True)
