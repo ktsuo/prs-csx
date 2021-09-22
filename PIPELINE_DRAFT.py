@@ -117,9 +117,9 @@ def run_plink(b: hb.batch.Batch,
     j.depends_on(depends_on_j)
     j.image(image)
     
-    input_bfile = b.read_input_group(bed=f'{bfile}/{target_pop}.bed', 
-                                    bim=f'{bfile}/{target_pop}.bim',
-                                    fam=f'{bfile}/{target_pop}.fam')
+    input_bfile = b.read_input_group(bed=f'{bfile}/{target_pop}/{target_pop}.bed', 
+                                    bim=f'{bfile}/{target_pop}/{target_pop}.bim',
+                                    fam=f'{bfile}/{target_pop}/{target_pop}.fam')
 
     j.command(f'cat tmp_prscsx_output/tmp_{source_pop}_pst_eff_a1_b0.5_phiauto_chr* > \
         tmp_prscsx_output/tmp_{source_pop}_pst_eff_a1_b0.5_phiauto_ALLchr.txt') # need to make sure same batch as prs-csx
