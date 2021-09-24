@@ -22,6 +22,10 @@ def bytes_to_gb(in_file: str):
 
 def format_input(filepath: str = None, SNP: str = None, A1: str = None, A2: str = None, BETA: str = None, P: str = None,
                  outdir: str = None):
+    """
+    Format summary statistics for PRS-CSx input
+    :return: formatted summary statistics for PRS-CSx
+    """
 
     print(f'formatting {filepath}')
     basename = os.path.basename(filepath)
@@ -50,12 +54,15 @@ def run_prscsx(b: hb.batch.Batch,
                snp_info_file: str,
                out_dir: str,
                meta):
+    """
+    Run PRS-CSx using formatted summary statistics
+    :return: PRS-CSx output files 
+    """
 
     j = b.new_job(name=f'run-prscsx-{chrom}')
 
     # get bfile
-    # input_bfile = b.read_input_group(bim=bim_file)
-    input_bim_file = b.read_input_group(bim=f'{bfile}/{target_pop}.bim')
+    input_bim_file = b.read_input_group(bim=f'{bfile}/{target_pop}/{target_pop}.bim')
     snp_info = b.read_input(snp_info_file)
 
     sst_files_list = []
@@ -101,43 +108,57 @@ def run_prscsx(b: hb.batch.Batch,
         --chrom={chrom} \
         --meta={meta}''')
 
-    #j.command(f'mv tmp_prscsx_output {j.scores}')
     j.command(f'cp -a tmp_prscsx_output/. {j.scores}')
     b.write_output(j.scores, f'{out_dir}/prs_csx_scores')
 
 def run_plink(b: hb.batch.Batch,
             depends_on_j,
+            bfile_size: int,
             image: str,
             source_pop: str,
             bfile: str,
             target_pop: str,
+            dup_ids_file: str,
             out_dir: str):
+    """
+    Using PRS-CSx output compute PRS for target population from each input summary statistic in PLINK
+    :return: PLINK score files
+    """
 
     j = b.new_job(name=f'run-plink-{source_pop}')
     j.depends_on(depends_on_j)
     j.image(image)
-    
-    input_bfile = b.read_input_group(bed=f'{bfile}/{target_pop}/{target_pop}.bed', 
-                                    bim=f'{bfile}/{target_pop}/{target_pop}.bim',
-                                    fam=f'{bfile}/{target_pop}/{target_pop}.fam')
+    j.cpu(8)
+
+    j.memory('highmem')
+
+    job_storage = bfile_size + 20
+    j.storage(f'{job_storage}Gi')
 
     j.command(f'cat tmp_prscsx_output/tmp_{source_pop}_pst_eff_a1_b0.5_phiauto_chr* > \
-        tmp_prscsx_output/tmp_{source_pop}_pst_eff_a1_b0.5_phiauto_ALLchr.txt') # need to make sure same batch as prs-csx
-    
-    j.declare_resource_group(ofile={'log':'{root}.log',
-    'nosex':'{root}.nosex',
-    'nopred':'{root}.nopred',
-    'profile':'{root}.profile'})
-    
-    j.command(f'plink1.9 \
-        --bfile {input_bfile} \
-        --score tmp_{source_pop}_pst_eff_a1_b0.5_phiauto_ALLchr.txt 2 4 6 sum center \
-        --out {j.ofile}')
-    b.write_output(j.ofile.profile, f'{out_dir}/{target_pop}_plink_scores')
+        tmp_prscsx_output/tmp_{source_pop}_pst_eff_a1_b0.5_phiauto_ALLchr.txt')
 
+    # exclude duplicate SNPs
+    if dup_ids_file:
+        dup_ids_input = b.read_input(dup_ids_file)
+        j.command(f'plink \
+            --bfile {bfile} \
+                --score tmp_prscsx_output/tmp_{source_pop}_pst_eff_a1_b0.5_phiauto_ALLchr.txt 2 4 6 sum center \
+                    --exclude {dup_ids_input} \
+                        --out tmp/from_{source_pop}')
+        j.command(f'mv tmp {j.output}')
+        b.write_output(j.output, f'{out_dir}/{target_pop}_plink_scores')
+    
+    if dup_ids_file is None:
+        j.command(f'plink \
+            --bfile {bfile} \
+                --score tmp_prscsx_output/tmp_{source_pop}_pst_eff_a1_b0.5_phiauto_ALLchr.txt 2 4 6 sum center \
+                    --out tmp/from_{source_pop}')
+        j.command(f'mv tmp {j.output}')
+        b.write_output(j.output, f'{out_dir}/{target_pop}_plink_scores')
 
 def main(args):
-    backend = hb.ServiceBackend(billing_project='diverse-pop-seq-ref',
+    backend = hb.ServiceBackend(billing_project='ukb_diverse_pops',
                                 bucket='ukb-diverse-pops')
 
     sst_list = []
@@ -178,10 +199,10 @@ def main(args):
     for i in sst_file_paths:
         sst_list.append(i['path'])
 
-    # get ref panels and untar
     b = hb.Batch(backend=backend, name='prscsx')
     prs_img = 'gcr.io/ukbb-diversepops-neale/ktsuo-prscsx'
 
+    # get ref panels and untar
     refpanels_dict = {}
     anc_list = ['afr', 'amr', 'eas', 'eur', 'sas']
     ref_file_sizes = 0
@@ -191,34 +212,39 @@ def main(args):
         ref_size = bytes_to_gb(file)
         ref_file_sizes += round(10.0 + 2.0 * ref_size)
 
+    # run PRS-CSx
     for chrom in range(1, 23):
         run_prscsx(b=b, image=prs_img, refpanels=refpanels_dict, bfile=args.bfile_path, target_pop=args.target_pop, summary_stats=sst_list,
                    N=n_list, pops=pop_list, chrom=chrom, meta=args.meta, refs_size=ref_file_sizes,
                    snp_info_file=args.snp_info, out_dir=args.out_dir)
 
+    # run PLINK
     plink_img = 'hailgenetics/genetics:0.2.37'
+    input_bfile = b.read_input_group(bed=f'{args.bfile_path}/{args.target_pop}/{args.target_pop}.bed', 
+                                bim=f'{args.bfile_path}/{args.target_pop}/{args.target_pop}.bim',
+                                fam=f'{args.bfile_path}/{args.target_pop}/{args.target_pop}.fam')
     for pop in pop_list:
-        run_plink(b=b, depends_on_j=run_prscsx, image=plink_img, target_pop=args.target_pop, bfile=args.bfile_path, source_pop=pop, out_dir=args.out_dir)
+        bed_size = bytes_to_gb(f'{args.bfile_path}/{args.target_pop}/{args.target_pop}.bed')
+        run_plink(b=b, depends_on_j=run_prscsx, image=plink_img, bfile_size=bed_size, target_pop=args.target_pop, bfile=input_bfile, source_pop=pop, dup_ids_file=args.dup_ids, out_dir=args.out_dir)
 
     b.run()
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input_file', required=True)
-    parser.add_argument('--SNP_col', required=True)
-    parser.add_argument('--A1_col', required=True)
-    parser.add_argument('--A2_col', required=True)
-    parser.add_argument('--A1_BETA_col', required=True)
-    parser.add_argument('--P_col', required=True)
-    parser.add_argument('--bfile_path', required=True)
-    parser.add_argument('--target_pop', required=True)
-    parser.add_argument('--ref_path', required=True)
-    parser.add_argument('--snp_info', required=True)
-    parser.add_argument('--out_dir', required=True)
-    parser.add_argument('--meta', action="store_true")
+    parser.add_argument('--input_file', required=True, help='path to tab-delimited file with first column path to summstats, second column POP str, third column sample size')
+    parser.add_argument('--SNP_col', required=True, help='name of rsID column in summstats')
+    parser.add_argument('--A1_col', required=True, help='name of effect allele column in summstats')
+    parser.add_argument('--A2_col', required=True, help='name of non-effect allele column in summstats')
+    parser.add_argument('--A1_BETA_col', required=True, help='name of beta column in summstats')
+    parser.add_argument('--P_col', required=True, help='name of P-value column in summstats')
+    parser.add_argument('--bfile_path', required=True, help='path to bfile of target population, bfiles need to be in format "gs://path/target_pop_str/target_pop_str.bed,bim,fam" but input "gs://path" here')
+    parser.add_argument('--target_pop', required=True, help='POP str of target population')
+    parser.add_argument('--ref_path', required=True, help='path to reference panels directory for PRS-CSx')
+    parser.add_argument('--snp_info', required=True, help='full path to SNP info file, including filename')
+    parser.add_argument('--dup_ids', help='full path to file with list of duplicated SNP IDs to exclude, including filename')
+    parser.add_argument('--out_dir', required=True, help='path to output directory')
+    parser.add_argument('--meta', action="store_true", help='include flag if you want PRS-CSx meta-analysis option')
     arguments = parser.parse_args()
 
     main(arguments)
-
-    # python prs-csx/PIPELINE_DRAFT.py --input_file tmp_prscsx_inputfile_trialAFR.txt --SNP_col rsid --A1_col ALT --A2_col REF --A1_BETA_col inv_var_meta_beta --P_col inv_var_meta_p --bfile_path 'gs://ukb-diverse-pops/ktsuo_unrelateds_tmp/AFR' --ref_path 'gs://ukb-diverse-pops/prs-csx' --out_dir 'gs://ukb-diverse-pops/prs-csx'
