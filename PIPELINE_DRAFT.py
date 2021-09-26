@@ -21,7 +21,7 @@ def bytes_to_gb(in_file: str):
 
 
 def format_input(filepath: str = None, SNP: str = None, A1: str = None, A2: str = None, BETA: str = None, P: str = None,
-                 outdir: str = None):
+                 target_pop: str = None, outdir: str = None):
     """
     Format summary statistics for PRS-CSx input
     :return: formatted summary statistics for PRS-CSx
@@ -38,7 +38,7 @@ def format_input(filepath: str = None, SNP: str = None, A1: str = None, A2: str 
     df = summstats[new_order]
 
     outfile_name = f'{root}_formatted.txt'
-    df.to_csv(f'{outdir}/formated_sst_files/{outfile_name}', sep='\t', index=False)
+    df.to_csv(f'{outdir}/formated_sst_files_for{target_pop}/{outfile_name}', sep='\t', index=False)
 
 
 def run_prscsx(b: hb.batch.Batch,
@@ -109,7 +109,7 @@ def run_prscsx(b: hb.batch.Batch,
         --meta={meta}''')
 
     j.command(f'cp -a tmp_prscsx_output/. {j.scores}')
-    b.write_output(j.scores, f'{out_dir}/prs_csx_scores')
+    b.write_output(j.scores, f'{out_dir}/prs_csx_output_for{target_pop}')
 
 def run_plink(b: hb.batch.Batch,
             depends_on_j,
@@ -189,7 +189,7 @@ def main(args):
         j.storage(disk_size)
         j.cpu(4)
         j.call(format_input, filepath=sst, SNP=args.SNP_col, A1=args.A1_col, A2=args.A2_col, BETA=args.A1_BETA_col,
-                     P=args.P_col, outdir=args.out_dir)
+                     P=args.P_col, target_pop=args.target_pop, outdir=args.out_dir)
 
     format_b.run()
 
