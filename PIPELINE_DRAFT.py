@@ -38,7 +38,7 @@ def format_input(filepath: str = None, SNP: str = None, A1: str = None, A2: str 
     df = summstats[new_order]
 
     outfile_name = f'{root}_formatted.txt'
-    df.to_csv(f'{outdir}/formated_sst_files_for{target_pop}/{outfile_name}', sep='\t', index=False)
+    df.to_csv(f'{outdir}/formatted_sst_files_for{target_pop}/{outfile_name}', sep='\t', index=False)
 
 
 def run_prscsx(b: hb.batch.Batch,
@@ -194,7 +194,7 @@ def main(args):
     format_b.run()
 
     # format summstats string names for input
-    sst_file_paths = hl.utils.hadoop_ls(f'{args.out_dir}/formated_sst_files')
+    sst_file_paths = hl.utils.hadoop_ls(f'{args.out_dir}/formatted_sst_files_for{args.target_pop}')
     sst_list = []
     for i in sst_file_paths:
         sst_list.append(i['path'])
