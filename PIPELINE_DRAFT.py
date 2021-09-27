@@ -111,15 +111,18 @@ def run_prscsx(b: hb.batch.Batch,
     j.command(f'cp -a tmp_prscsx_output/. {j.scores}')
     b.write_output(j.scores, f'{out_dir}/prs_csx_output_for{target_pop}')
 
+    return j
+
+
 def run_plink(b: hb.batch.Batch,
-            depends_on_j,
-            bfile_size: int,
-            image: str,
-            source_pop: str,
-            bfile: str,
-            target_pop: str,
-            dup_ids_file: str,
-            out_dir: str):
+              depends_on_j,
+              bfile_size: int,
+              image: str,
+              source_pop: str,
+              bfile: hb.ResourceGroup,
+              target_pop: str,
+              dup_ids_file: str,
+              out_dir: str):
     """
     Using PRS-CSx output compute PRS for target population from each input summary statistic in PLINK
     :return: PLINK score files
@@ -157,7 +160,9 @@ def run_plink(b: hb.batch.Batch,
         j.command(f'mv tmp {j.output}')
         b.write_output(j.output, f'{out_dir}/{target_pop}_plink_scores')
 
+
 def main(args):
+    global prscsx_j
     backend = hb.ServiceBackend(billing_project='ukb_diverse_pops',
                                 bucket='ukb-diverse-pops')
 
@@ -214,18 +219,20 @@ def main(args):
 
     # run PRS-CSx
     for chrom in range(1, 23):
-        run_prscsx(b=b, image=prs_img, refpanels=refpanels_dict, bfile=args.bfile_path, target_pop=args.target_pop, summary_stats=sst_list,
-                   N=n_list, pops=pop_list, chrom=chrom, meta=args.meta, refs_size=ref_file_sizes,
-                   snp_info_file=args.snp_info, out_dir=args.out_dir)
+        prscsx_j = run_prscsx(b=b, image=prs_img, refpanels=refpanels_dict, bfile=args.bfile_path,
+                              target_pop=args.target_pop, summary_stats=sst_list, N=n_list, pops=pop_list, chrom=chrom,
+                              meta=args.meta, refs_size=ref_file_sizes, snp_info_file=args.snp_info,
+                              out_dir=args.out_dir)
 
     # run PLINK
     plink_img = 'hailgenetics/genetics:0.2.37'
-    input_bfile = b.read_input_group(bed=f'{args.bfile_path}/{args.target_pop}/{args.target_pop}.bed', 
-                                bim=f'{args.bfile_path}/{args.target_pop}/{args.target_pop}.bim',
-                                fam=f'{args.bfile_path}/{args.target_pop}/{args.target_pop}.fam')
+    input_bfile = b.read_input_group(bed=f'{args.bfile_path}/{args.target_pop}/{args.target_pop}.bed',
+                                     bim=f'{args.bfile_path}/{args.target_pop}/{args.target_pop}.bim',
+                                     fam=f'{args.bfile_path}/{args.target_pop}/{args.target_pop}.fam')
     for pop in pop_list:
         bed_size = bytes_to_gb(f'{args.bfile_path}/{args.target_pop}/{args.target_pop}.bed')
-        run_plink(b=b, depends_on_j=run_prscsx, image=plink_img, bfile_size=bed_size, target_pop=args.target_pop, bfile=input_bfile, source_pop=pop, dup_ids_file=args.dup_ids, out_dir=args.out_dir)
+        run_plink(b=b, depends_on_j=prscsx_j, image=plink_img, bfile_size=bed_size, target_pop=args.target_pop,
+                  bfile=input_bfile, source_pop=pop, dup_ids_file=args.dup_ids, out_dir=args.out_dir)
 
     b.run()
 
