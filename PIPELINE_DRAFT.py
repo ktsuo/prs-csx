@@ -42,7 +42,8 @@ def format_input(filepath: str = None, SNP: str = None, A1: str = None, A2: str 
 
 
 def run_prscsx(b: hb.batch.Batch,
-               refpanels: dict,
+               #refpanels: dict,
+               depends_on_j, 
                image: str,
                bfile: str,
                target_pop: str,
@@ -50,8 +51,9 @@ def run_prscsx(b: hb.batch.Batch,
                N: List,
                pops: List,
                chrom: int,
+               ref_panels_dir: str,
                refs_size: int,
-               snp_info_file: str,
+               #snp_info_file: str,
                out_dir: str,
                meta):
     """
@@ -60,10 +62,11 @@ def run_prscsx(b: hb.batch.Batch,
     """
 
     j = b.new_job(name=f'run-prscsx-{chrom}')
+    j.depends_on(depends_on_j)
 
     # get bfile
     input_bim_file = b.read_input_group(bim=f'{bfile}/{target_pop}/{target_pop}.bim')
-    snp_info = b.read_input(snp_info_file)
+    #snp_info = b.read_input(snp_info_file)
 
     sst_files_list = []
     sst_files_sizes = 0
@@ -82,23 +85,17 @@ def run_prscsx(b: hb.batch.Batch,
     # format sample sizes for input
     n_list = ','.join(map(str, N))
 
-    job_storage = refs_size + sst_files_sizes + 10
+    job_storage = refs_size + sst_files_sizes + 20
 
     j.image(image)
     j.cpu(8)
     j.storage(f'{job_storage}Gi')
-
-    j.command('mkdir ref_panels')
+    j.memory('highmem')
     j.command('mkdir tmp_prscsx_output')
-    j.command(f'cp {snp_info} ref_panels')
-
-    for ancestry, input_file in refpanels.items():
-        j.command(f'tar xf {input_file} -C ref_panels')
-    j.command('ls ref_panels')
 
     j.command(f'''
     python3 PRScsx.py \
-        --ref_dir=ref_panels \
+        --ref_dir={ref_panels_dir} \
         --bim_prefix={input_bim_file} \
         --sst_file={sst_files} \
         --n_gwas={n_list} \
@@ -108,7 +105,7 @@ def run_prscsx(b: hb.batch.Batch,
         --chrom={chrom} \
         --meta={meta}''')
 
-    j.command(f'cp -a tmp_prscsx_output/. {j.scores}')
+    j.command(f'mv tmp_prscsx_output {j.scores}')
     b.write_output(j.scores, f'{out_dir}/prs_csx_output_for{target_pop}')
 
     return j
@@ -138,26 +135,33 @@ def run_plink(b: hb.batch.Batch,
     job_storage = bfile_size + 20
     j.storage(f'{job_storage}Gi')
 
-    j.command(f'cat tmp_prscsx_output/tmp_{source_pop}_pst_eff_a1_b0.5_phiauto_chr* > \
-        tmp_prscsx_output/tmp_{source_pop}_pst_eff_a1_b0.5_phiauto_ALLchr.txt')
+    input_files = hl.hadoop_ls(f'{out_dir}/prs_csx_output_for{target_pop}/tmp_{source_pop}_pst_eff_a1_b0.5_phiauto_chr*')
+    j.command('mkdir tmp_input')
+    for file in input_files:
+        file = b.read_input(file['path'])
+        j.command(f'mv {file} tmp_input')
+    j.command('ls tmp_input')
 
+    j.command(f'cat tmp_input/tmp_{source_pop}_pst_eff_a1_b0.5_phiauto_chr* > tmp_input/tmp_{source_pop}_pst_eff_a1_b0.5_phiauto_ALLchr.txt')
+
+    j.command('mkdir tmp_output')
     # exclude duplicate SNPs
     if dup_ids_file:
         dup_ids_input = b.read_input(dup_ids_file)
         j.command(f'plink \
             --bfile {bfile} \
-                --score tmp_prscsx_output/tmp_{source_pop}_pst_eff_a1_b0.5_phiauto_ALLchr.txt 2 4 6 sum center \
+                --score tmp_input/tmp_{source_pop}_pst_eff_a1_b0.5_phiauto_ALLchr.txt 2 4 6 sum center \
                     --exclude {dup_ids_input} \
-                        --out tmp/from_{source_pop}')
-        j.command(f'mv tmp {j.output}')
+                        --out tmp_output/from_{source_pop}')
+        j.command(f'mv tmp_output {j.output}')
         b.write_output(j.output, f'{out_dir}/{target_pop}_plink_scores')
     
     if dup_ids_file is None:
         j.command(f'plink \
             --bfile {bfile} \
-                --score tmp_prscsx_output/tmp_{source_pop}_pst_eff_a1_b0.5_phiauto_ALLchr.txt 2 4 6 sum center \
-                    --out tmp/from_{source_pop}')
-        j.command(f'mv tmp {j.output}')
+                --score tmp_input/tmp_{source_pop}_pst_eff_a1_b0.5_phiauto_ALLchr.txt 2 4 6 sum center \
+                    --out tmp_output/from_{source_pop}')
+        j.command(f'mv tmp_output {j.output}')
         b.write_output(j.output, f'{out_dir}/{target_pop}_plink_scores')
 
 
@@ -182,7 +186,7 @@ def main(args):
     print(pop_list)
     print(n_list)
 
-    #format_image = hb.docker.build_python_image('gcr.io/ukbb-diversepops-neale/prs-csx-python',
+    # format_image = hb.docker.build_python_image('gcr.io/ukbb-diversepops-neale/prs-csx-python',
     #                                            requirements=['pandas', 'fsspec', 'gcsfs'])
     format_b = hb.Batch(backend=backend, name='prscsx-formatting',
                         default_python_image='gcr.io/ukbb-diversepops-neale/prs-csx-python')
@@ -198,7 +202,7 @@ def main(args):
 
     format_b.run()
 
-    # format summstats string names for input
+    #format summstats string names for input
     sst_file_paths = hl.utils.hadoop_ls(f'{args.out_dir}/formatted_sst_files_for{args.target_pop}')
     sst_list = []
     for i in sst_file_paths:
@@ -207,7 +211,10 @@ def main(args):
     b = hb.Batch(backend=backend, name='prscsx')
     prs_img = 'gcr.io/ukbb-diversepops-neale/ktsuo-prscsx'
 
-    # get ref panels and untar
+    # read in snp info file
+    snp_info = b.read_input(args.snp_info)
+
+    # get ref panels
     refpanels_dict = {}
     anc_list = ['afr', 'amr', 'eas', 'eur', 'sas']
     ref_file_sizes = 0
@@ -216,12 +223,22 @@ def main(args):
         refpanels_dict[anc] = b.read_input(file)
         ref_size = bytes_to_gb(file)
         ref_file_sizes += round(10.0 + 2.0 * ref_size)
+    
+    refpanels_j = b.new_job(name=f'tar_refpanels')
+    refpanels_j.cpu(8)
+    tar_refpanels_job_storage = ref_file_sizes + 20
+    refpanels_j.storage(f'{tar_refpanels_job_storage}Gi')
+    refpanels_j.command(f'mkdir {refpanels_j.ref_panels}')
+    refpanels_j.command(f'mv {snp_info} {refpanels_j.ref_panels}')
+
+    for ancestry, input_file in refpanels_dict.items():
+        refpanels_j.command(f'tar xf {input_file} -C {refpanels_j.ref_panels}')
+    refpanels_j.command(f'ls {refpanels_j.ref_panels}')
 
     # run PRS-CSx
-    for chrom in range(1, 23):
-        prscsx_j = run_prscsx(b=b, image=prs_img, refpanels=refpanels_dict, bfile=args.bfile_path,
-                              target_pop=args.target_pop, summary_stats=sst_list, N=n_list, pops=pop_list, chrom=chrom,
-                              meta=args.meta, refs_size=ref_file_sizes, snp_info_file=args.snp_info,
+    for chrom in range(1,21):
+        prscsx_j = run_prscsx(b=b, image=prs_img, depends_on_j=refpanels_j, bfile=args.bfile_path,
+                              target_pop=args.target_pop, summary_stats=sst_list, N=n_list, pops=pop_list, chrom=chrom, ref_panels_dir=refpanels_j.ref_panels, meta=args.meta, refs_size=ref_file_sizes,
                               out_dir=args.out_dir)
 
     # run PLINK
@@ -233,6 +250,7 @@ def main(args):
         bed_size = bytes_to_gb(f'{args.bfile_path}/{args.target_pop}/{args.target_pop}.bed')
         run_plink(b=b, depends_on_j=prscsx_j, image=plink_img, bfile_size=bed_size, target_pop=args.target_pop,
                   bfile=input_bfile, source_pop=pop, dup_ids_file=args.dup_ids, out_dir=args.out_dir)
+
 
     b.run()
 
