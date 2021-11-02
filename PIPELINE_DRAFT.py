@@ -20,8 +20,7 @@ def bytes_to_gb(in_file: str):
     return size_gigs
 
 
-def format_input(filepath: str = None, SNP: str = None, A1: str = None, A2: str = None, BETA: str = None, P: str = None,
-                 target_pop: str = None, outdir: str = None):
+def format_input(filepath: str = None, SNP: str = None, A1: str = None, A2: str = None, BETA: str = None, P: str = None, target_pop: str = None, outdir: str = None):
     """
     Format summary statistics for PRS-CSx input
     :return: formatted summary statistics for PRS-CSx
@@ -37,13 +36,13 @@ def format_input(filepath: str = None, SNP: str = None, A1: str = None, A2: str 
     new_order = ['SNP', 'A1', 'A2', 'BETA', 'P']
     df = summstats[new_order]
 
-    outfile_name = f'{root}_formatted.txt'
+    #outfile_name = f'{root}_formatted.txt'
+    outfile_name = f'{root}'
     df.to_csv(f'{outdir}/formatted_sst_files_for{target_pop}/{outfile_name}', sep='\t', index=False)
 
 
 def run_prscsx(b: hb.batch.Batch,
-               #refpanels: dict,
-               depends_on_j, 
+               depends_on_j,
                image: str,
                bfile: str,
                target_pop: str,
@@ -53,12 +52,11 @@ def run_prscsx(b: hb.batch.Batch,
                chrom: int,
                ref_panels_dir: str,
                refs_size: int,
-               #snp_info_file: str,
                out_dir: str,
                meta):
     """
     Run PRS-CSx using formatted summary statistics
-    :return: PRS-CSx output files 
+    :return: PRS-CSx output files
     """
 
     j = b.new_job(name=f'run-prscsx-{chrom}')
@@ -112,7 +110,7 @@ def run_prscsx(b: hb.batch.Batch,
 
 
 def run_plink(b: hb.batch.Batch,
-              depends_on_j,
+            #   depends_on_j_list: list,
               bfile_size: int,
               image: str,
               source_pop: str,
@@ -126,7 +124,7 @@ def run_plink(b: hb.batch.Batch,
     """
 
     j = b.new_job(name=f'run-plink-{source_pop}')
-    j.depends_on(depends_on_j)
+    # j.depends_on(*depends_on_j_list)
     j.image(image)
     j.cpu(8)
 
@@ -135,8 +133,8 @@ def run_plink(b: hb.batch.Batch,
     job_storage = bfile_size + 20
     j.storage(f'{job_storage}Gi')
 
-    input_files = hl.hadoop_ls(f'{out_dir}/prs_csx_output_for{target_pop}/tmp_{source_pop}_pst_eff_a1_b0.5_phiauto_chr*')
     j.command('mkdir tmp_input')
+    input_files = hl.hadoop_ls(f'{out_dir}/prs_csx_output_for{target_pop}/tmp_{source_pop}_pst_eff_a1_b0.5_phiauto_chr*')
     for file in input_files:
         file = b.read_input(file['path'])
         j.command(f'mv {file} tmp_input')
@@ -155,7 +153,7 @@ def run_plink(b: hb.batch.Batch,
                         --out tmp_output/from_{source_pop}')
         j.command(f'mv tmp_output {j.output}')
         b.write_output(j.output, f'{out_dir}/{target_pop}_plink_scores')
-    
+
     if dup_ids_file is None:
         j.command(f'plink \
             --bfile {bfile} \
@@ -182,9 +180,9 @@ def main(args):
             pop_list.append(pop)
             n_list.append(n)
 
-    print(sst_list)
-    print(pop_list)
-    print(n_list)
+    # print(sst_list)
+    # print(pop_list)
+    # print(n_list)
 
     # format_image = hb.docker.build_python_image('gcr.io/ukbb-diversepops-neale/prs-csx-python',
     #                                            requirements=['pandas', 'fsspec', 'gcsfs'])
@@ -202,11 +200,29 @@ def main(args):
 
     format_b.run()
 
-    #format summstats string names for input
+    # format summstats string names for input
     sst_file_paths = hl.utils.hadoop_ls(f'{args.out_dir}/formatted_sst_files_for{args.target_pop}')
-    sst_list = []
+    sst_list2 = []
+    sst_list_basenames = []
     for i in sst_file_paths:
-        sst_list.append(i['path'])
+        sst_list2.append(i['path'])
+        basename = os.path.basename(i['path'])
+        sst_list_basenames.append(basename)
+    # order summstats string names based on original input
+    sst_list_input_basenames = []
+    for i in sst_list:
+        basename = os.path.basename(i)
+        root, extension = os.path.splitext(basename)
+        sst_list_input_basenames.append(root)
+
+    sst_list_basenames_sorted = sorted(sst_list_basenames,key=sst_list_input_basenames.index)
+
+    # WILL CHANGE THE LINES ABOVE: ALL WE NEED IS THESE LAST TWO LINES, BUT TAKE THE FORMATTED_SST_PATH AND APPEND TO THE ORIGINAL SST_LIST AND THAT KEEPS THE ORDER
+    formatted_sst_path = f'{args.out_dir}/formatted_sst_files_for{args.target_pop}/'
+    final_sst_list = ['{}{}'.format(formatted_sst_path,i) for i in sst_list_basenames_sorted]
+
+    print(final_sst_list)
+    print(pop_list)
 
     b = hb.Batch(backend=backend, name='prscsx')
     prs_img = 'gcr.io/ukbb-diversepops-neale/ktsuo-prscsx'
@@ -223,7 +239,7 @@ def main(args):
         refpanels_dict[anc] = b.read_input(file)
         ref_size = bytes_to_gb(file)
         ref_file_sizes += round(10.0 + 2.0 * ref_size)
-    
+
     refpanels_j = b.new_job(name=f'tar_refpanels')
     refpanels_j.cpu(8)
     tar_refpanels_job_storage = ref_file_sizes + 20
@@ -236,10 +252,12 @@ def main(args):
     refpanels_j.command(f'ls {refpanels_j.ref_panels}')
 
     # run PRS-CSx
-    for chrom in range(1,21):
+    prscsx_jobs = []
+    for chrom in range(1,23):
         prscsx_j = run_prscsx(b=b, image=prs_img, depends_on_j=refpanels_j, bfile=args.bfile_path,
-                              target_pop=args.target_pop, summary_stats=sst_list, N=n_list, pops=pop_list, chrom=chrom, ref_panels_dir=refpanels_j.ref_panels, meta=args.meta, refs_size=ref_file_sizes,
+                              target_pop=args.target_pop, summary_stats=final_sst_list, N=n_list, pops=pop_list, chrom=chrom, ref_panels_dir=refpanels_j.ref_panels, meta=args.meta, refs_size=ref_file_sizes,
                               out_dir=args.out_dir)
+        prscsx_jobs.append(prscsx_j)
 
     # run PLINK
     plink_img = 'hailgenetics/genetics:0.2.37'
@@ -248,9 +266,8 @@ def main(args):
                                      fam=f'{args.bfile_path}/{args.target_pop}/{args.target_pop}.fam')
     for pop in pop_list:
         bed_size = bytes_to_gb(f'{args.bfile_path}/{args.target_pop}/{args.target_pop}.bed')
-        run_plink(b=b, depends_on_j=prscsx_j, image=plink_img, bfile_size=bed_size, target_pop=args.target_pop,
+        run_plink(b=b, depends_on_j_list=prscsx_jobs, image=plink_img, bfile_size=bed_size, target_pop=args.target_pop,
                   bfile=input_bfile, source_pop=pop, dup_ids_file=args.dup_ids, out_dir=args.out_dir)
-
 
     b.run()
 
