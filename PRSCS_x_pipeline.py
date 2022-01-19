@@ -490,8 +490,3 @@ if __name__ == '__main__':
     arguments = parser.parse_args()
 
     main(arguments)
-
-# FOR PRS-CS: 
-# ONE BFILE for scoring (for entire UKBB for e.g.), also ONE BIM file for running PRS-CS --> then when computing r2 values can split up scores into whatever populations you want
-
-# can have same columns for PRS-CS and PRS-CSx just specify in documentation what each column should be for each
