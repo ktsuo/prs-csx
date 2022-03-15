@@ -307,7 +307,7 @@ def main(args):
         
             j = format_b.new_python_job(name=f'Formatting: {sst}')
             sst_size = bytes_to_gb(sst)
-            disk_size = round(4.0 + 2.0 * sst)
+            disk_size = round(4.0 + 2.0 * sst_size)
             j.storage(disk_size)
             j.cpu(4)
             j.call(format_input, filepath=sst, SNP=SNP_name, A1=A1_name, A2=A2_name, BETA=beta,
