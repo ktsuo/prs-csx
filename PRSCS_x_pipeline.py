@@ -486,7 +486,7 @@ if __name__ == '__main__':
     # parser.add_argument('--A2_col', required=True, help='name of non-effect allele column in summstats')
     # parser.add_argument('--A1_BETA_col', required=True, help='name of beta column in summstats')
     # parser.add_argument('--P_col', required=True, help='name of P-value column in summstats')
-    parser.add_argument('--target_pop', required=True, help='POP str of target population')
+    # parser.add_argument('--target_pop', required=True, help='POP str of target population')
     arguments = parser.parse_args()
 
     main(arguments)
