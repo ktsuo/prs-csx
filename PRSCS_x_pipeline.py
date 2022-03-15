@@ -346,7 +346,7 @@ def main(args):
             prscs_jobs = []
             for chrom in range(1,23):
                 prscs_j = run_prscs(b=b, image=prs_img, depends_on_j=refpanel_j, bfile=args.bfile_path,
-                                    pheno=pheno, target_cohort=target_cohort, summary_stats=final_sst, N=n, chrom=chrom, ref_panels_dir=refpanel_j.ref_panel, ref_size=ref_file_size,
+                                    pheno=pheno, target_cohort=target_cohort, summary_stats=final_sst, N=n, chrom=chrom, ref_panels_dir=refpanel_j.ref_panel, refs_size=ref_file_size,
                                     out_dir=args.out_dir)
                 prscs_jobs.append(prscs_j)
 
