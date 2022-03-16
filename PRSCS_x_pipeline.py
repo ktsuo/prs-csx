@@ -317,13 +317,9 @@ def main(args):
             format_b.run()
         
             formatted_sst_path = f'{args.out_dir}/formatted_sst_files_for{pheno}/'
-<<<<<<< HEAD
             basename = os.path.basename(sst)
             root, extension = os.path.splitext(basename)
             final_sst = f'{formatted_sst_path}{root}'
-=======
-            final_sst = f'{formatted_sst_path}{sst}'
->>>>>>> 97ca046945236bc2ea5d722c3f2b17056ae7629b
 
             b = hb.Batch(backend=backend, name='prscs')
             prs_img = 'gcr.io/ukbb-diversepops-neale/ktsuo-prscs' 
