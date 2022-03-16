@@ -64,7 +64,7 @@ def run_prscs(b: hb.batch.Batch,
     input_bim_file = b.read_input_group(bim=f'{bfile}/{target_cohort}.bim')
 
     input_sst = b.read_input(summary_stats)
-    sst_file_size = round(10.0 + 2.0 * bytes_to_gb(input_sst))
+    sst_file_size = round(10.0 + 2.0 * bytes_to_gb(summary_stats))
 
     job_storage = refs_size + sst_file_size + 20
 
@@ -307,17 +307,19 @@ def main(args):
         
             j = format_b.new_python_job(name=f'Formatting: {sst}')
             sst_size = bytes_to_gb(sst)
-            disk_size = round(4.0 + 2.0 * sst)
+            disk_size = round(4.0 + 2.0 * sst_size)
             j.storage(disk_size)
             j.cpu(4)
-            j.call(format_input, filepath=sst, SNP=SNP_name, A1=A1_name, A2=A2_name, BETA=beta,
-                        P=pval, pheno=pheno, outdir=args.out_dir) # instead of creating a folder of formatted summstats for each target pop, create a folder for each pheno
-            
+            # j.call(format_input, filepath=sst, SNP=SNP_name, A1=A1_name, A2=A2_name, BETA=beta,
+                        # P=pval, pheno=pheno, outdir=args.out_dir) # instead of creating a folder of formatted summstats for each target pop, create a folder for each pheno
+            j.call(format_input, sst, SNP_name, A1_name, A2_name, beta, pval, pheno, args.out_dir)            
 
             format_b.run()
         
             formatted_sst_path = f'{args.out_dir}/formatted_sst_files_for{pheno}/'
-            final_sst = ['{}{}'.format(formatted_sst_path,sst)]
+            basename = os.path.basename(sst)
+            root, extension = os.path.splitext(basename)
+            final_sst = f'{formatted_sst_path}{root}'
 
             b = hb.Batch(backend=backend, name='prscs')
             prs_img = 'gcr.io/ukbb-diversepops-neale/ktsuo-prscs' 
@@ -346,7 +348,7 @@ def main(args):
             prscs_jobs = []
             for chrom in range(1,23):
                 prscs_j = run_prscs(b=b, image=prs_img, depends_on_j=refpanel_j, bfile=args.bfile_path,
-                                    pheno=pheno, target_cohort=target_cohort, summary_stats=final_sst, N=n, chrom=chrom, ref_panels_dir=refpanel_j.ref_panel, ref_size=ref_file_size,
+                                    pheno=pheno, target_cohort=target_cohort, summary_stats=final_sst, N=n, chrom=chrom, ref_panels_dir=refpanel_j.ref_panel, refs_size=ref_file_size,
                                     out_dir=args.out_dir)
                 prscs_jobs.append(prscs_j)
 
@@ -413,8 +415,8 @@ def main(args):
                 disk_size = round(4.0 + 2.0 * sst_size)
                 j.storage(disk_size)
                 j.cpu(4)
-                j.call(format_input, filepath=sst_list[sst_i], SNP=SNP_names_list[sst_i], A1=A1_names_list[sst_i], A2=A2_names_list[sst_i], BETA=beta_names_list[sst_i],
-                            P=pval_names_list[sst_i], pheno=pheno, outdir=args.out_dir) # instead of creating a folder of formatted summstats for each target pop, create a folder for each pheno
+                j.call(format_input, sst_list[sst_i], SNP_names_list[sst_i], A1_names_list[sst_i], A2_names_list[sst_i], beta_names_list[sst_i],
+                            pval_names_list[sst_i], pheno, args.out_dir) # instead of creating a folder of formatted summstats for each target pop, create a folder for each pheno
                 
                 basename = os.path.basename(sst_list[sst_i])
                 sst_list_basenames.append(basename)
@@ -490,3 +492,6 @@ if __name__ == '__main__':
     arguments = parser.parse_args()
 
     main(arguments)
+
+
+# python PRSCS_x_pipeline.py --input_file /path/to/input/file/prscs_inputfile_targetcohortUKBB.txt --prs_cs --bfile_path gs://ukb-diverse-pops/ktsuo_unrelateds_tmp --target_pop SAS --ref_path gs://ukb-diverse-pops/prs-csx/ --snp_info gs://ukb-diverse-pops/prs-csx/snpinfo_mult_ukbb_hm3 --out_dir gs://ukb-diverse-pops/prs-csx/ktsuo_test_runs --dup_ids gs://ukb-diverse-pops/ktsuo_unrelateds_tmp/SAS/SAS.dups
