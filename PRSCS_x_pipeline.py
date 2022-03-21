@@ -81,7 +81,6 @@ def run_prscs(b: hb.batch.Batch,
         --sst_file={input_sst} \
         --n_gwas={N} \
         --out_dir=tmp_prscs_output \
-        --out_name=tmp \
         --chrom={chrom}''')
 
     j.command(f'mv tmp_prscs_output {j.scores}')
@@ -286,6 +285,8 @@ def main(args):
             pval_names.append(row["p-value_label_names"])
             target_cohorts.append(row["target"])
 
+        format_b = hb.Batch(backend=backend, name='prscs_x-formatting',
+            default_python_image='gcr.io/ukbb-diversepops-neale/prs-csx-python')
         for i in range(0, len(phenos)):
             print(f'Analyzing {phenos[i]}')
             pheno = phenos[i]
@@ -300,10 +301,10 @@ def main(args):
             target_cohort = target_cohorts[i]
 
 
-            # format_image = hb.docker.build_python_image('gcr.io/ukbb-diversepops-neale/prs-csx-python',
-            #                                            requirements=['pandas', 'fsspec', 'gcsfs']) 
-            format_b = hb.Batch(backend=backend, name='prscs_x-formatting',
-                        default_python_image='gcr.io/ukbb-diversepops-neale/prs-csx-python')
+            # # # format_image = hb.docker.build_python_image('gcr.io/ukbb-diversepops-neale/prs-csx-python',
+            # # #                                            requirements=['pandas', 'fsspec', 'gcsfs']) 
+            # # format_b = hb.Batch(backend=backend, name='prscs_x-formatting',
+            # #             default_python_image='gcr.io/ukbb-diversepops-neale/prs-csx-python')
         
             j = format_b.new_python_job(name=f'Formatting: {sst}')
             sst_size = bytes_to_gb(sst)
@@ -314,22 +315,19 @@ def main(args):
                         # P=pval, pheno=pheno, outdir=args.out_dir) # instead of creating a folder of formatted summstats for each target pop, create a folder for each pheno
             j.call(format_input, sst, SNP_name, A1_name, A2_name, beta, pval, pheno, args.out_dir)            
 
-            format_b.run()
+            # # format_b.run()
+        
         
             formatted_sst_path = f'{args.out_dir}/formatted_sst_files_for{pheno}/'
-<<<<<<< HEAD
             basename = os.path.basename(sst)
             root, extension = os.path.splitext(basename)
             final_sst = f'{formatted_sst_path}{root}'
-=======
-            final_sst = f'{formatted_sst_path}{sst}'
->>>>>>> 97ca046945236bc2ea5d722c3f2b17056ae7629b
 
             b = hb.Batch(backend=backend, name='prscs')
             prs_img = 'gcr.io/ukbb-diversepops-neale/ktsuo-prscs' 
 
-            # read in snp info file
-            snp_info = b.read_input(args.snp_info)
+            # read in snp info file -- this is not necessary for PRS-CS
+            # snp_info = b.read_input(args.snp_info)
         
             # read in ref panel
             ref_filename = os.path.join(args.ref_path, f'ldblk_ukbb_{refpanel_pop}.tar.gz')
@@ -342,17 +340,17 @@ def main(args):
             tar_refpanel_job_storage = ref_file_size + 20
             refpanel_j.storage(f'{tar_refpanel_job_storage}Gi')
             refpanel_j.command(f'mkdir {refpanel_j.ref_panel}')
-            refpanel_j.command(f'mv {snp_info} {refpanel_j.ref_panel}')
-
-            refpanel_j.command(f'tar xf {ref_panel} -C {refpanel_j.ref_panel}')
+            refpanel_j.command(f'tar -zxvf {ref_panel} -C {refpanel_j.ref_panel}')
             refpanel_j.command(f'ls {refpanel_j.ref_panel}')
+
+            refpanel_dir = f'{refpanel_j.ref_panel}/ldblk_ukbb_{refpanel_pop}'
 
             # run PRS-CS
 
             prscs_jobs = []
             for chrom in range(1,23):
                 prscs_j = run_prscs(b=b, image=prs_img, depends_on_j=refpanel_j, bfile=args.bfile_path,
-                                    pheno=pheno, target_cohort=target_cohort, summary_stats=final_sst, N=n, chrom=chrom, ref_panels_dir=refpanel_j.ref_panel, refs_size=ref_file_size,
+                                    pheno=pheno, target_cohort=target_cohort, summary_stats=final_sst, N=n, chrom=chrom, ref_panels_dir=refpanel_dir, refs_size=ref_file_size,
                                     out_dir=args.out_dir)
                 prscs_jobs.append(prscs_j)
 
@@ -367,6 +365,7 @@ def main(args):
                     bfile=input_bfile, target=target_cohort, pheno=pheno, dup_ids_file=args.dup_ids, out_dir=args.out_dir, prs_method="prscs")
 
             b.run()
+        format_b.run()
 
     if args.prs_csx:
     
