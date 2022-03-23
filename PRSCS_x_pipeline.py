@@ -19,7 +19,7 @@ def bytes_to_gb(in_file: str):
     return size_gigs
 
 
-def format_input(filepath: str = None, SNP: str = None, A1: str = None, A2: str = None, BETA: str = None, P: str = None, pheno: str = None, outdir: str = None):
+def format_input(filepath: str = None, SNP: str = None, A1: str = None, A2: str = None, BETA: str = None, P: str = None, pheno: str = None, outdir: str = None, snp_info_filepath: str = None):
     """
     Format summary statistics for PRS-CS(x) input
     :return: formatted summary statistics for PRS-CS(x)
@@ -35,9 +35,12 @@ def format_input(filepath: str = None, SNP: str = None, A1: str = None, A2: str 
     new_order = ['SNP', 'A1', 'A2', 'BETA', 'P']
     df = summstats[new_order]
 
+    snp_info = pd.read_table(snp_info_filepath, header=0, sep='\t', usecols=['SNP'])
+    df_filtered = df.merge(snp_info, how='inner', on='SNP')
+
     #outfile_name = f'{root}_formatted.txt'
     outfile_name = f'{root}'
-    df.to_csv(f'{outdir}/formatted_sst_files_for{pheno}/{outfile_name}', sep='\t', index=False)
+    df_filtered.to_csv(f'{outdir}/formatted_sst_files_for{pheno}/{outfile_name}', sep='\t', index=False)
 
 
 def run_prscs(b: hb.batch.Batch,
@@ -285,50 +288,53 @@ def main(args):
             pval_names.append(row["p-value_label_names"])
             target_cohorts.append(row["target"])
 
-        format_b = hb.Batch(backend=backend, name='prscs_x-formatting',
-            default_python_image='gcr.io/ukbb-diversepops-neale/prs-csx-python')
+        # format_b = hb.Batch(backend=backend, name='prscs_x-formatting',
+        #     default_python_image='gcr.io/ukbb-diversepops-neale/prs-csx-python')
+        # for i in range(0, len(phenos)):
+        #     print(f'Analyzing {phenos[i]}')
+        #     pheno = phenos[i]
+        #     sst = ssts[i]
+        #     refpanel_pop = refpanel_pops[i]
+        #     n = ns[i]
+        #     SNP_name = SNP_names[i]
+        #     A1_name = A1_names[i]
+        #     A2_name = A2_names[i]
+        #     beta = beta_names[i]
+        #     pval = pval_names[i]
+        #     target_cohort = target_cohorts[i]
+
+        #     # # # format_image = hb.docker.build_python_image('gcr.io/ukbb-diversepops-neale/prs-csx-python',
+        #     # # #                                            requirements=['pandas', 'fsspec', 'gcsfs']) 
+        
+        #     j = format_b.new_python_job(name=f'Formatting: {sst}')
+        #     sst_size = bytes_to_gb(sst)
+        #     disk_size = round(4.0 + 2.0 * sst_size)
+        #     j.storage(disk_size)
+        #     j.cpu(4)
+        #     # j.call(format_input, filepath=sst, SNP=SNP_name, A1=A1_name, A2=A2_name, BETA=beta,
+        #                 # P=pval, pheno=pheno, outdir=args.out_dir) # instead of creating a folder of formatted summstats for each target pop, create a folder for each pheno
+        #     j.call(format_input, sst, SNP_name, A1_name, A2_name, beta, pval, pheno, args.out_dir, args.snp_info)            
+
+        # format_b.run()
+        
+        b = hb.Batch(backend=backend, name='prscs')
         for i in range(0, len(phenos)):
-            print(f'Analyzing {phenos[i]}')
             pheno = phenos[i]
-            sst = ssts[i]
             refpanel_pop = refpanel_pops[i]
-            n = ns[i]
-            SNP_name = SNP_names[i]
-            A1_name = A1_names[i]
-            A2_name = A2_names[i]
-            beta = beta_names[i]
-            pval = pval_names[i]
             target_cohort = target_cohorts[i]
+            n = ns[i]
+            sst = ssts[i]
 
-
-            # # # format_image = hb.docker.build_python_image('gcr.io/ukbb-diversepops-neale/prs-csx-python',
-            # # #                                            requirements=['pandas', 'fsspec', 'gcsfs']) 
-            # # format_b = hb.Batch(backend=backend, name='prscs_x-formatting',
-            # #             default_python_image='gcr.io/ukbb-diversepops-neale/prs-csx-python')
-        
-            j = format_b.new_python_job(name=f'Formatting: {sst}')
-            sst_size = bytes_to_gb(sst)
-            disk_size = round(4.0 + 2.0 * sst_size)
-            j.storage(disk_size)
-            j.cpu(4)
-            # j.call(format_input, filepath=sst, SNP=SNP_name, A1=A1_name, A2=A2_name, BETA=beta,
-                        # P=pval, pheno=pheno, outdir=args.out_dir) # instead of creating a folder of formatted summstats for each target pop, create a folder for each pheno
-            j.call(format_input, sst, SNP_name, A1_name, A2_name, beta, pval, pheno, args.out_dir)            
-
-            # # format_b.run()
-        
-        
             formatted_sst_path = f'{args.out_dir}/formatted_sst_files_for{pheno}/'
             basename = os.path.basename(sst)
             root, extension = os.path.splitext(basename)
             final_sst = f'{formatted_sst_path}{root}'
 
-            b = hb.Batch(backend=backend, name='prscs')
             prs_img = 'gcr.io/ukbb-diversepops-neale/ktsuo-prscs' 
 
             # read in snp info file -- this is not necessary for PRS-CS
             # snp_info = b.read_input(args.snp_info)
-        
+
             # read in ref panel
             ref_filename = os.path.join(args.ref_path, f'ldblk_ukbb_{refpanel_pop}.tar.gz')
             ref_panel = b.read_input(ref_filename)
@@ -346,7 +352,6 @@ def main(args):
             refpanel_dir = f'{refpanel_j.ref_panel}/ldblk_ukbb_{refpanel_pop}'
 
             # run PRS-CS
-
             prscs_jobs = []
             for chrom in range(1,23):
                 prscs_j = run_prscs(b=b, image=prs_img, depends_on_j=refpanel_j, bfile=args.bfile_path,
@@ -363,9 +368,7 @@ def main(args):
             bed_size = bytes_to_gb(f'{args.bfile_path}/{target_cohort}.bed')
             run_plink(b=b, depends_on_j_list=prscs_jobs, image=plink_img, bfile_size=bed_size,
                     bfile=input_bfile, target=target_cohort, pheno=pheno, dup_ids_file=args.dup_ids, out_dir=args.out_dir, prs_method="prscs")
-
-            b.run()
-        format_b.run()
+        b.run()
 
     if args.prs_csx:
     
