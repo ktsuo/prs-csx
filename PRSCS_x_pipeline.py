@@ -83,7 +83,7 @@ def run_prscs(b: hb.batch.Batch,
         --bim_prefix={input_bim_file} \
         --sst_file={input_sst} \
         --n_gwas={N} \
-        --out_dir=tmp_prscs_output \
+        --out_dir=tmp_prscs_output/tmp \
         --chrom={chrom}''')
 
     j.command(f'mv tmp_prscs_output {j.scores}')
@@ -203,7 +203,7 @@ def run_plink(b: hb.batch.Batch,
                 --bfile {bfile} \
                     --score tmp_input/tmp_pst_eff_a1_b0.5_phiauto_ALLchr.txt 2 4 6 sum \
                         --exclude {dup_ids_input} \
-                            --out tmp_output/for_{pheno}')
+                            --out tmp_output/{target}_scores')
             j.command(f'mv tmp_output {j.output}')
             b.write_output(j.output, f'{out_dir}/{pheno}/{target}_plink_scores')
 
@@ -211,7 +211,7 @@ def run_plink(b: hb.batch.Batch,
             j.command(f'plink \
                 --bfile {bfile} \
                     --score tmp_input/tmp_pst_eff_a1_b0.5_phiauto_ALLchr.txt 2 4 6 sum \
-                        --out tmp_output/for_{pheno}')
+                        --out tmp_output/{target}_scores')
             j.command(f'mv tmp_output {j.output}')
             b.write_output(j.output, f'{out_dir}/{pheno}/{target}_plink_scores')
 
@@ -331,9 +331,6 @@ def main(args):
             final_sst = f'{formatted_sst_path}{root}'
 
             prs_img = 'gcr.io/ukbb-diversepops-neale/ktsuo-prscs' 
-
-            # read in snp info file -- this is not necessary for PRS-CS
-            # snp_info = b.read_input(args.snp_info)
 
             # read in ref panel
             ref_filename = os.path.join(args.ref_path, f'ldblk_ukbb_{refpanel_pop}.tar.gz')
