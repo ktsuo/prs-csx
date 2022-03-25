@@ -176,6 +176,9 @@ def run_plink(b: hb.batch.Batch,
     """
 
     if prs_method == 'prscs':
+        input_files = hl.hadoop_ls(f'{out_dir}/{pheno}/prs_cs_output_for{target}/tmp_pst_eff_a1_b0.5_phiauto_chr*')
+        print(input_files)
+
         j = b.new_job(name=f'run-plink')
         j.depends_on(*depends_on_j_list)
         j.image(image)
@@ -187,7 +190,6 @@ def run_plink(b: hb.batch.Batch,
         j.storage(f'{job_storage}Gi')
 
         j.command('mkdir tmp_input')
-        input_files = hl.hadoop_ls(f'{out_dir}/{pheno}/prs_cs_output_for{target}/tmp_pst_eff_a1_b0.5_phiauto_chr*')
         for file in input_files:
             file = b.read_input(file['path'])
             j.command(f'mv {file} tmp_input')
@@ -288,34 +290,34 @@ def main(args):
             pval_names.append(row["p-value_label_names"])
             target_cohorts.append(row["target"])
 
-        # format_b = hb.Batch(backend=backend, name='prscs_x-formatting',
-        #     default_python_image='gcr.io/ukbb-diversepops-neale/prs-csx-python')
-        # for i in range(0, len(phenos)):
-        #     print(f'Analyzing {phenos[i]}')
-        #     pheno = phenos[i]
-        #     sst = ssts[i]
-        #     refpanel_pop = refpanel_pops[i]
-        #     n = ns[i]
-        #     SNP_name = SNP_names[i]
-        #     A1_name = A1_names[i]
-        #     A2_name = A2_names[i]
-        #     beta = beta_names[i]
-        #     pval = pval_names[i]
-        #     target_cohort = target_cohorts[i]
+        format_b = hb.Batch(backend=backend, name='prscs_x-formatting',
+            default_python_image='gcr.io/ukbb-diversepops-neale/prs-csx-python')
+        for i in range(0, len(phenos)):
+            print(f'Analyzing {phenos[i]}')
+            pheno = phenos[i]
+            sst = ssts[i]
+            refpanel_pop = refpanel_pops[i]
+            n = ns[i]
+            SNP_name = SNP_names[i]
+            A1_name = A1_names[i]
+            A2_name = A2_names[i]
+            beta = beta_names[i]
+            pval = pval_names[i]
+            target_cohort = target_cohorts[i]
 
-        #     # # # format_image = hb.docker.build_python_image('gcr.io/ukbb-diversepops-neale/prs-csx-python',
-        #     # # #                                            requirements=['pandas', 'fsspec', 'gcsfs']) 
+            # # # format_image = hb.docker.build_python_image('gcr.io/ukbb-diversepops-neale/prs-csx-python',
+            # # #                                            requirements=['pandas', 'fsspec', 'gcsfs']) 
         
-        #     j = format_b.new_python_job(name=f'Formatting: {sst}')
-        #     sst_size = bytes_to_gb(sst)
-        #     disk_size = round(4.0 + 2.0 * sst_size)
-        #     j.storage(disk_size)
-        #     j.cpu(4)
-        #     # j.call(format_input, filepath=sst, SNP=SNP_name, A1=A1_name, A2=A2_name, BETA=beta,
-        #                 # P=pval, pheno=pheno, outdir=args.out_dir) # instead of creating a folder of formatted summstats for each target pop, create a folder for each pheno
-        #     j.call(format_input, sst, SNP_name, A1_name, A2_name, beta, pval, pheno, args.out_dir, args.snp_info)            
+            j = format_b.new_python_job(name=f'Formatting: {sst}')
+            sst_size = bytes_to_gb(sst)
+            disk_size = round(4.0 + 2.0 * sst_size)
+            j.storage(disk_size)
+            j.cpu(4)
+            # j.call(format_input, filepath=sst, SNP=SNP_name, A1=A1_name, A2=A2_name, BETA=beta,
+                        # P=pval, pheno=pheno, outdir=args.out_dir) # instead of creating a folder of formatted summstats for each target pop, create a folder for each pheno
+            j.call(format_input, sst, SNP_name, A1_name, A2_name, beta, pval, pheno, args.out_dir, args.snp_info)            
 
-        # format_b.run()
+        format_b.run()
         
         b = hb.Batch(backend=backend, name='prscs')
         for i in range(0, len(phenos)):
@@ -350,7 +352,7 @@ def main(args):
 
             # run PRS-CS
             prscs_jobs = []
-            for chrom in range(1,23):
+            for chrom in range(21,23):
                 prscs_j = run_prscs(b=b, image=prs_img, depends_on_j=refpanel_j, bfile=args.bfile_path,
                                     pheno=pheno, target_cohort=target_cohort, summary_stats=final_sst, N=n, chrom=chrom, ref_panels_dir=refpanel_dir, refs_size=ref_file_size,
                                     out_dir=args.out_dir)
@@ -495,6 +497,3 @@ if __name__ == '__main__':
     arguments = parser.parse_args()
 
     main(arguments)
-
-
-# python PRSCS_x_pipeline.py --input_file /path/to/input/file/prscs_inputfile_targetcohortUKBB.txt --prs_cs --bfile_path gs://ukb-diverse-pops/ktsuo_unrelateds_tmp --target_pop SAS --ref_path gs://ukb-diverse-pops/prs-csx/ --snp_info gs://ukb-diverse-pops/prs-csx/snpinfo_mult_ukbb_hm3 --out_dir gs://ukb-diverse-pops/prs-csx/ktsuo_test_runs --dup_ids gs://ukb-diverse-pops/ktsuo_unrelateds_tmp/SAS/SAS.dups
