@@ -177,7 +177,6 @@ def run_plink(b: hb.batch.Batch,
 
     if prs_method == 'prscs':
         input_files = hl.hadoop_ls(f'{out_dir}/{pheno}/prs_cs_output_for{target}/tmp_pst_eff_a1_b0.5_phiauto_chr*')
-        print(input_files)
 
         j = b.new_job(name=f'run-plink')
         j.depends_on(*depends_on_j_list)
