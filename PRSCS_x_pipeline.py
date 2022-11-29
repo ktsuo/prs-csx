@@ -3,7 +3,9 @@ import argparse
 import hailtop.batch as hb
 import pandas as pd
 import os
+from hailtop.batch.job import Job
 from typing import List
+
 
 def bytes_to_gb(in_file: str):
     """
@@ -19,10 +21,27 @@ def bytes_to_gb(in_file: str):
     return size_gigs
 
 
-def format_input(filepath: str = None, SNP: str = None, A1: str = None, A2: str = None, BETA: str = None, P: str = None, pheno: str = None, outdir: str = None, snp_info_filepath: str = None):
+def format_input(filepath: str = None,
+                 SNP: str = None,
+                 A1: str = None,
+                 A2: str = None,
+                 BETA: str = None,
+                 P: str = None,
+                 pheno: str = None,
+                 outdir: str = None,
+                 snp_info_filepath: str = None):
     """
     Format summary statistics for PRS-CS(x) input
-    :return: formatted summary statistics for PRS-CS(x)
+    :param filepath: path to file to be formatted
+    :param SNP: path to file to be formatted
+    :param A1: path to file to be formatted
+    :param A2: path to file to be formatted
+    :param BETA: path to file to be formatted
+    :param P: path to file to be formatted
+    :param pheno: path to file to be formatted
+    :param outdir: path to file to be formatted
+    :param snp_info_filepath: path to file to be formatted
+    :return:
     """
 
     print(f'formatting {filepath}')
@@ -44,20 +63,32 @@ def format_input(filepath: str = None, SNP: str = None, A1: str = None, A2: str 
     df_filtered.to_csv(f'{outdir}/formatted_sst_files_for{pheno}/{outfile_name}', sep='\t', index=False)
 
 
-def run_prscs(b: hb.batch.Batch,
-               depends_on_j,
-               image: str,
-               bfile: str,
-               target_cohort: str,
-               pheno: str,
-               summary_stats: str,
-               N: int,
-               chrom: int,
-               ref_panels_dir: str,
-               refs_size: int,
-               out_dir: str):
+def run_prscs(b: hb.batch.Batch = None,
+          depends_on_j: Job = None,
+          bfile: str = None,
+          target_cohort: str = None,
+          pheno: str = None,
+          summary_stats: str = None,
+          N: int = None,
+          chrom: int = None,
+          ref_panels_dir: str = None,
+          refs_size: int = None,
+          out_dir: str = None,
+          image: str = 'gcr.io/ukbb-diversepops-neale/ktsuo-prscs'):
     """
     Run PRS-CS using formatted summary statistics
+    :param b: Batch object to add jobs to
+    :param depends_on_j: job that the created job should only run after
+    :param image: Batch object to add jobs to
+    :param bfile: Batch object to add jobs to
+    :param target_cohort: Batch object to add jobs to
+    :param pheno: job that the created jobs should only run after
+    :param summary_stats: Batch object to add jobs to
+    :param N: Batch object to add jobs to
+    :param chrom: job that the created jobs should only run after
+    :param ref_panels_dir: Batch object to add jobs to
+    :param refs_size: Batch object to add jobs to
+    :param out_dir: directory path to write output files to
     :return: PRS-CS output files
     """
 
@@ -91,6 +122,7 @@ def run_prscs(b: hb.batch.Batch,
     b.write_output(j.scores, f'{out_dir}/{pheno}/prs_cs_output_for{target_cohort}')
 
     return j
+
 
 def run_prscsx(b: hb.batch.Batch,
                depends_on_j,
@@ -158,6 +190,7 @@ def run_prscsx(b: hb.batch.Batch,
     b.write_output(j.scores, f'{out_dir}/{pheno}/prs_csx_output_for{target_pop}')
 
     return j
+
 
 # Changed from 'sum center' to 'sum' only
 def run_plink(b: hb.batch.Batch,
@@ -309,17 +342,7 @@ def main(args):
     file = pd.read_csv(args.input_file)
 
     if args.prs_cs:
-
-        phenos = []
-        ssts = []
-        refpanel_pops = []
-        ns = []
-        SNP_names = []
-        A1_names = []
-        A2_names = []
-        beta_names = []
-        pval_names = []
-        target_cohorts = []
+        phenos, ssts, refpanel_pops, ns, SNP_names, A1_names, A2_names, beta_names, pval_names, target_cohorts = ([] for i in range(10))
 
         for index, row in file.iterrows():
             phenos.append(row["phenos"])
@@ -349,9 +372,6 @@ def main(args):
                 pval = pval_names[i]
                 target_cohort = target_cohorts[i]
 
-                # # # format_image = hb.docker.build_python_image('gcr.io/ukbb-diversepops-neale/prs-csx-python',
-                # # #                                            requirements=['pandas', 'fsspec', 'gcsfs']) 
-            
                 j = format_b.new_python_job(name=f'Formatting: {sst}')
                 sst_size = bytes_to_gb(sst)
                 disk_size = round(4.0 + 2.0 * sst_size)
@@ -363,7 +383,7 @@ def main(args):
         else:
             print('Summstats already formatted!')
 
-        b = hb.Batch(backend=backend, name='prscs')
+        prscs_b = hb.Batch(backend=backend, name='run-prsCS')
         for i in range(0, len(phenos)):
             pheno = phenos[i]
             refpanel_pop = refpanel_pops[i]
@@ -380,7 +400,7 @@ def main(args):
 
             # read in ref panel
             ref_filename = os.path.join(args.ref_path, f'ldblk_ukbb_{refpanel_pop}.tar.gz')
-            ref_panel = b.read_input(ref_filename)
+            ref_panel = prscs_b.read_input(ref_filename)
             ref_size = bytes_to_gb(ref_filename)
             ref_file_size = round(10.0 + 2.0 * ref_size)
 
@@ -397,7 +417,7 @@ def main(args):
             # run PRS-CS
             prscs_jobs = []
             for chrom in range(1,23):
-                prscs_j = run_prscs(b=b, image=prs_img, depends_on_j=refpanel_j, bfile=args.bfile_path,
+                prscs_j = run_prscs(b=prscs_b, image=prs_img, depends_on_j=refpanel_j, bfile=args.bfile_path,
                                     pheno=pheno, target_cohort=target_cohort, summary_stats=final_sst, N=n, chrom=chrom, ref_panels_dir=refpanel_dir, refs_size=ref_file_size,
                                     out_dir=args.out_dir)
                 prscs_jobs.append(prscs_j)
@@ -413,21 +433,31 @@ def main(args):
                     bfile=input_bfile, target=target_cohort, pheno=pheno, dup_ids_file=args.dup_ids, out_dir=args.out_dir, prs_method="prscs")
             # run_plink(b=b, image=plink_img, bfile_size=bed_size,
                     # bfile=input_bfile, target=target_cohort, pheno=pheno, dup_ids_file=args.dup_ids, out_dir=args.out_dir, prs_method="prscs")
-        b.run()
+        prscs_b.run()
+
+        prscs_plink_b = hb.Batch(backend=backend, name='run-plink-prsCS')
+        for i in range(0, len(phenos)):
+            pheno = phenos[i]
+            refpanel_pop = refpanel_pops[i]
+            target_cohort = target_cohorts[i]
+            n = ns[i]
+            sst = ssts[i]
+
+            # run PLINK
+            plink_img = 'hailgenetics/genetics:0.2.37'
+            input_bfile = prscs_plink_b.read_input_group(bed=f'{args.bfile_path}/{target_pop}/{target_cohort}.bed',
+                                             bim=f'{args.bfile_path}/{target_pop}/{target_cohort}.bim',
+                                             fam=f'{args.bfile_path}/{target_pop}/{target_cohort}.fam')
+
+            bed_size = bytes_to_gb(f'{args.bfile_path}/{target_cohort}.bed')
+            run_plink(b=prscs_plink_b, depends_on_j_list=prscs_jobs, image=plink_img, bfile_size=bed_size,
+                      bfile=input_bfile, target=target_cohort, pheno=pheno, dup_ids_file=args.dup_ids,
+                      out_dir=args.out_dir, prs_method="prscs")
+
+        prscs_plink_b.run()
 
     if args.prs_csx:
-    
-        phenos = []
-        ssts = []
-        gwas_pops = []
-        ns = []
-        SNP_names = []
-        A1_names = []
-        A2_names = []
-        beta_names = []
-        pval_names = []
-        target_pops = []
-        dup_rsid_files = []
+        phenos, ssts, gwas_pops, ns, SNP_names, A1_names, A2_names, beta_names, pval_names, target_pops, dup_rsid_files = ([] for i in range(11))
 
         for index, row in file.iterrows():
             phenos.append(row["phenos"])
@@ -442,7 +472,6 @@ def main(args):
             target_pops.append(row["target"])
             dup_rsid_files.append(row["dup_ids_file"])
 
-        
         if args.format:
             format_b = hb.Batch(backend=backend, name='prscs_x-formatting', default_python_image='gcr.io/ukbb-diversepops-neale/prs-csx-python')
             for i in range(0, len(phenos)):
@@ -528,7 +557,6 @@ def main(args):
             # TODO: create another batch and get rid of depends_on_j_list
             b = hb.Batch(backend=backend, name='prscsx')
 
-
             plink_img = 'hailgenetics/genetics:0.2.37'
             input_bfile = b.read_input_group(bed=f'{args.bfile_path}/{target_pop}/{target_pop}.bed',
                                             bim=f'{args.bfile_path}/{target_pop}/{target_pop}.bim',
@@ -555,6 +583,7 @@ def main(args):
                     #         bfile=input_bfile, dup_ids_file=dup_rsid_files[i], out_dir=args.out_dir, prs_method='prscsx', pheno=pheno, source_pop=pop)
 
         b.run()
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
