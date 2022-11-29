@@ -1,3 +1,0 @@
-﻿phenos,sum_stats_paths,populations,sample_sizes,snp_names,A1_names,A2_names,Beta_names,p-value_label_names,target
-MCHC,/Users/angelica/GoogleDrive/PostDoc/Technical/PRS-Csx/Example_sumstats/BBJ/BBJ.MCH.autosome.txt.gz,EUR,19803,SNP,REF,ALT,BETA,PVALUE,UKBB
-WBC,/Users/angelica/GoogleDrive/PostDoc/Technical/PRS-Csx/Example_sumstats/PAGE/lnwbc.out.bgz,EUR,28608,RSID,Allele1,Allele2,EFFECT,PVAL,UKBB
