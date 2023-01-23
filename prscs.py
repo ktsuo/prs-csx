@@ -100,7 +100,7 @@ def run_prscs(args,
         refpanel_dir = f'{refpanel_j.ref_panel}/ldblk_ukbb_{refpanel_pop}'
 
         # run PRS-CS
-        for chrom in range(21, 23):
+        for chrom in range(1, 23):
             prscs(b=prscs_b, depends_on_j=refpanel_j, bfile=args.bfile_path, pheno=pheno, target_cohort=target_cohort,
                   summary_stats=final_sst, N=n, chrom=chrom, ref_panels_dir=refpanel_dir, refs_size=ref_file_size,
                   out_dir=args.out_dir)
