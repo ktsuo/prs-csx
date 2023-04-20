@@ -81,7 +81,10 @@ def run_prscs(args,
         formatted_sst_path = f'{args.out_dir}/formatted_sst_files_for{pheno}/'
         basename = os.path.basename(sst)
         root, extension = os.path.splitext(basename)
-        final_sst = f'{formatted_sst_path}{root}'
+        if extension == '.bgz':
+            final_sst = f'{formatted_sst_path}{root}'
+        else:
+            final_sst = f'{formatted_sst_path}{basename}'
 
         # read in ref panel
         ref_filename = os.path.join(args.ref_path, f'ldblk_ukbb_{refpanel_pop}.tar.gz')
